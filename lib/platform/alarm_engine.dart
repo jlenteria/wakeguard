@@ -1,67 +1,7 @@
 import 'package:flutter/services.dart';
 
-import '../core/alarm.dart';
-
-/// Health signals the UI surfaces so the user can fix them before an alarm
-/// silently fails to ring.
-enum HealthSeverity { ok, warning, blocking }
-
-class HealthCheck {
-  const HealthCheck({
-    required this.id,
-    required this.label,
-    required this.detail,
-    required this.severity,
-    this.action,
-  });
-
-  final String id;
-  final String label;
-  final String detail;
-  final HealthSeverity severity;
-
-  /// Platform-side identifier for a fix action, e.g. `exact_alarm`.
-  final String? action;
-}
-
-/// What the current platform is actually able to do.
-///
-/// The UI must never offer a control the platform cannot honour, so this is
-/// data rather than a pile of `Platform.isIOS` checks scattered in widgets.
-class EngineCapabilities {
-  const EngineCapabilities({
-    required this.canLoopWhileBackgrounded,
-    required this.canLockScreenTakeover,
-    required this.canUseCameraInBackground,
-    required this.canBypassSilentSwitch,
-    required this.pendingSlotCap,
-    this.contractVersion = 1,
-    this.canPractice = false,
-    this.canCheckIn = false,
-  });
-
-  /// Android: true (foreground service). iOS: false.
-  final bool canLoopWhileBackgrounded;
-
-  /// Android: true (setFullScreenIntent). iOS: false, no public API exists.
-  final bool canLockScreenTakeover;
-
-  /// Android: true. iOS: false, camera requires the foreground.
-  final bool canUseCameraInBackground;
-
-  /// Android: false — the app does not request Do Not Disturb policy access,
-  /// so an alarm rings at whatever volume the user has set. iOS: false too.
-  /// Kept as a capability because the ring experience depends on it.
-  final bool canBypassSilentSwitch;
-
-  /// Android: effectively unlimited. iOS: 64 pending notifications.
-  final int? pendingSlotCap;
-  final int contractVersion;
-  final bool canPractice;
-  final bool canCheckIn;
-
-  bool get hasPendingSlotCap => pendingSlotCap != null;
-}
+import '../models/alarm.dart';
+import '../models/health.dart';
 
 /// Platform-agnostic contract implemented once per platform.
 abstract class AlarmEngine {
@@ -74,20 +14,12 @@ abstract class AlarmEngine {
 
   Future<void> cancel(String alarmId);
 
-  /// The alarms the platform has actually recorded.
-  ///
-  /// The native store is what decides whether something rings, so this is read
-  /// on every load rather than trusted from cache: an alarm that fired while
-  /// the app was closed changes state natively (a one-shot retires itself) and
-  /// a mirror that never hears about it keeps offering a switch for an alarm
-  /// that can no longer ring.
+  /// The platform's own alarm record, read every load: a native state change
+  /// (e.g. a one-shot retiring) must not be masked by a stale mirror.
   Future<List<Alarm>> nativeAlarms();
 
-  /// Most recent dismissals, newest first, as `{at, method}` maps.
-  ///
-  /// This is the raw material for the wake-up streak: the platform records it
-  /// because only the platform sees a dismissal that happens while the Dart
-  /// isolate is not running.
+  /// Recent dismissals, newest first, as `{at, method}` maps; only the platform
+  /// sees dismissals that happen while the Dart isolate is not running.
   Future<List<Map<String, Object?>>> history();
 
   Future<void> dismiss(String alarmId, {required String method});
@@ -96,38 +28,25 @@ abstract class AlarmEngine {
 
   Future<List<String>> notificationsReady();
 
-  /// Shows the platform's runtime permission dialogs. Both platforms require an
-  /// explicit grant before an alarm is visible, so this is called from the
-  /// preflight rather than at alarm time, when it is too late to be useful.
+  /// Shows runtime permission dialogs; called from preflight, not alarm time.
   Future<bool> requestPermissions();
 
-  /// Plays the bundled alarm ladder through the platform's alarm audio stream
-  /// so the user can confirm they can actually hear it. Returns once the whole
-  /// sample has played.
-  ///
-  /// [soundPack] previews one specific tone family so the user can compare the
-  /// options before committing to one.
+  /// Plays the bundled alarm ladder on the alarm audio stream so the user can
+  /// confirm audibility; [soundPack] previews one tone family.
   Future<void> playAudibilitySample({AlarmSoundPack? soundPack});
 
-  /// Stops a running [playAudibilitySample] immediately. Safe to call when
-  /// nothing is playing.
+  /// Stops a running [playAudibilitySample]; safe when nothing is playing.
   Future<void> stopAudibilitySample();
 
-  /// Opens the platform settings screen that resolves [action].
-  ///
-  /// Returns null on success, or a human-readable reason when the screen could
-  /// not be opened. Returning the reason rather than swallowing it keeps a
-  /// broken fix button distinguishable from a working one.
+  /// Opens the platform settings screen for [action]; returns null on success or
+  /// a reason on failure, so a broken fix button stays distinguishable.
   Future<String?> openFixAction(String action);
 
   Future<Map<String, Object?>> launchDetails();
 }
 
-/// Thrown by [AlarmEngine] implementations for engine-level failures.
-///
-/// Deliberately not named `PlatformException`: the method channel already
-/// throws Flutter's `PlatformException`, and shadowing that name makes the
-/// catch clauses in the controller ambiguous.
+/// Thrown for engine-level failures; deliberately not `PlatformException`, whose
+/// name the method channel already uses, making catch clauses ambiguous.
 class EngineException implements Exception {
   EngineException(this.code, this.message);
   final String code;
@@ -151,12 +70,7 @@ class MethodChannelEngine implements AlarmEngine {
   @override
   Future<void> clearHistory() => _invoke<void>('clearHistory');
 
-  /// Single boundary between Flutter's channel errors and this app's error type.
-  ///
-  /// Native failures arrive as [PlatformException] and unimplemented methods as
-  /// [MissingPluginException]. Letting those escape would mean every caller had
-  /// to know about Flutter internals, so they are translated once here and the
-  /// native error code is preserved for the health UI.
+  /// Translates native errors once, preserving the code for the health UI.
   Future<T?> _invoke<T>(String method, [Object? arguments]) async {
     try {
       return await _channel.invokeMethod<T>(method, arguments);
@@ -275,9 +189,8 @@ class MethodChannelEngine implements AlarmEngine {
   }
 }
 
-/// Thrown when a native method is not implemented on the running platform.
-/// Both platforms implement the full surface; this exists so a missing handler
-/// degrades into a visible UI error instead of a `MissingPluginException`.
+/// Degrades a missing native handler into a visible UI error, not a
+/// `MissingPluginException`.
 class EngineUnavailable implements AlarmEngine {
   @override
   Future<void> practice(Alarm alarm) async { throw EngineException('UNAVAILABLE', 'Challenge practice requires Android.'); }

@@ -4,13 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
-import 'core/alarm_repository.dart';
+import 'features/alarms/alarm_repository.dart';
 import 'platform/alarm_engine.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
   runZonedGuarded(
     () async {
+      // Initialize inside the guarded zone: runApp below runs here, and the
+      // binding must be created in the same zone or Flutter reports a mismatch.
+      WidgetsFlutterBinding.ensureInitialized();
       final repository = AlarmRepository();
       final engine = await _resolveEngine();
       final details = await engine.launchDetails();
@@ -23,15 +25,13 @@ Future<void> main() async {
       );
     },
     (error, stack) {
-      // A crash here must never be silent: the user has an alarm depending on
-      // this process, and the native watchdog is what recovers it.
+      // Never silent: a user has an alarm depending on this process.
       debugPrint('WakeGuard fatal: $error\n$stack');
     },
   );
 }
 
-/// Falls back to [EngineUnavailable] rather than throwing so a partially
-/// built binary still shows an actionable UI instead of a red screen.
+/// Falls back to [EngineUnavailable] so a partial binary still shows a usable UI.
 Future<AlarmEngine> _resolveEngine() async {
   try {
     await MethodChannel(MethodChannelEngine.channelName)

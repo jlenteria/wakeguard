@@ -90,9 +90,17 @@ available regardless of configuration.
 
 ```
 lib/
-  core/        Alarm model, repository, reconcile, escalation, settings, streaks
+  models/      Pure domain types: alarm, escalation, reconcile, stats, settings, health
+  features/    Feature-first slices: controllers, repositories, screens and view models
+    alarms/      Alarm controller, repository, list + editor UI
+    challenges/  Wake-up QR codes and the shareable QR sheet
+    health/      Readiness checks screen
+    history/     Streak, stats and the dismissal log screen
+    settings/    Preferences controller and settings screen
+    onboarding/  First-run setup
+    shell/       Tab shell and the alarm-editor routing flow
+  shared/      View-model base + provider
   platform/    AlarmEngine contract + MethodChannel implementation
-  ui/          Alarm editor, Health, History, Settings, onboarding
 android/       Scheduler, persisted sessions, check-ins, ringing, health checks
 ios/           iOS target and native platform integration
 branding/      Vector logo and high-resolution artwork
@@ -101,7 +109,7 @@ docs/          Architecture and verification scenarios
 
 The Dart side keeps a **mirror** of the alarm set for fast rendering; the
 native store decides what actually rings. They are reconciled on every load
-(`lib/core/reconcile.dart`): the platform wins on `enabled`, alarms the mirror
+(`lib/models/reconcile.dart`): the platform wins on `enabled`, alarms the mirror
 knows but the platform lost are re-scheduled, and alarms only the platform
 knows are imported rather than dropped.
 
