@@ -3,11 +3,11 @@
   "permission": {
     "bash": {
       "*": "allow",
-      "flutter analyze*": "deny",
+      "flutter analyze*": "allow",
       "flutter build*": "deny",
       "flutter run*": "deny",
-      "flutter test*": "deny",
-      "dart analyze*": "deny",
+      "flutter test*": "allow",
+      "dart analyze*": "allow",
       "dart run*": "deny",
       "dart test*": "deny",
       "dart compile*": "deny",
