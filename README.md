@@ -53,6 +53,21 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
 - **Privacy:** no account, ads or analytics; local processing and explicit
   Android backup/transfer exclusions. Uninstalling deletes local records.
 
+## Screenshots
+
+Captured on a real Android device (1080×2400).
+
+<p align="center">
+  <img src="docs/screenshots/onboarding.jpg" width="16%" alt="Onboarding" />
+  <img src="docs/screenshots/home.jpg" width="16%" alt="Alarm list" />
+  <img src="docs/screenshots/settings.jpg" width="16%" alt="Settings and wake-up QR" />
+  <img src="docs/screenshots/challenge.jpg" width="16%" alt="Wake challenge" />
+  <img src="docs/screenshots/health.jpg" width="16%" alt="Alarm readiness checks" />
+  <img src="docs/screenshots/history.jpg" width="16%" alt="Wake-up history and streaks" />
+</p>
+
+<p align="center"><sub>Onboarding · Alarms · Settings · Challenge · Health · History</sub></p>
+
 ## What makes an alarm ring
 
 Android delivery and recovery use three complementary mechanisms:
