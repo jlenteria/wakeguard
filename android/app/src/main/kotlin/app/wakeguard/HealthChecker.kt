@@ -14,13 +14,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Translates platform configuration into user-facing health checks.
- *
- * This is the part that actually addresses the original complaint. The most
- * common reason a phone alarm "did not ring" is not a bug in the alarm app: it
- * is an OEM task killer, a muted alarm volume, Do Not Disturb, or the
- * full-screen-intent permission. None of those are discoverable from an alarm
- * list, so they are surfaced explicitly with a one-tap fix.
+ * Translates platform config into user-facing health checks. The usual reason an alarm "did not
+ * ring" is an OEM killer, mute, DND, or full-screen permission — surfaced here with a one-tap fix.
  */
 object HealthChecker {
 
@@ -31,10 +26,7 @@ object HealthChecker {
         "canLoopWhileBackgrounded" to true,
         "canLockScreenTakeover" to true,
         "canUseCameraInBackground" to true,
-        // Without ACCESS_NOTIFICATION_POLICY the app cannot make a
-        // notification channel bypass Do Not Disturb, and that permission is a
-        // review risk with a weak justification: the alarm audio itself runs
-        // on STREAM_ALARM, which DND does not silence in its usual modes.
+        // No ACCESS_NOTIFICATION_POLICY: alarm audio runs on STREAM_ALARM, which DND does not silence.
         "canBypassSilentSwitch" to false,
         // Android has no equivalent to iOS's 64-pending-notification cap.
         "pendingSlotCap" to null,
@@ -71,14 +63,12 @@ object HealthChecker {
                 ok = "The wake challenge appears over the lock screen.",
                 bad = "The challenge may appear as a plain notification instead.",
                 action = "full_screen",
-                // The alarm still rings either way; only how the challenge
-                // reaches the screen changes, so this must not block saving.
+                // The alarm rings either way; only presentation changes, so do not block saving.
                 severity = HealthSeverityValue.warning,
             ),
         )
 
-        // Report the actual permission even before a camera alarm is saved:
-        // Dart checks the draft's escapes to decide whether saving is blocked.
+        // Report the real permission before saving; Dart checks the draft's escapes to block.
         val faceUsed = AlarmStore.all(context).any { it.enabled &&
             (AlarmDefaults.ESCAPE_FACE in it.escapes || (AlarmDefaults.ESCAPE_QR in it.escapes && it.qrValue.isNotBlank())) }
         add(
@@ -110,8 +100,7 @@ object HealthChecker {
             ),
         )
 
-        // Always advisory: the vendor screen has no public deep link, so this
-        // is guidance rather than a verifiable state.
+        // Always advisory: the vendor screen has no public deep link.
         add(
             mapOf(
                 "id" to "autostart",
@@ -160,12 +149,8 @@ object HealthChecker {
     }.getOrDefault(0)
 
     /**
-     * Runtime notification permission, Android 13+.
-     *
-     * Without this the foreground service can still start, but the ringing
-     * notification is invisible and the full-screen intent is suppressed, so the
-     * alarm looks like it silently failed. That is exactly the failure mode this
-     * app exists to avoid, so it is checked explicitly.
+     * Runtime notification permission (Android 13+). Without it the service still starts but the
+     * notification is invisible and the full-screen intent is suppressed, looking like a silent fail.
      */
     fun hasNotificationPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
@@ -201,14 +186,8 @@ object HealthChecker {
     // endregion
 
     /**
-     * Opens the settings screen that fixes [action].
-     *
-     * Failures are reported rather than swallowed. The previous version wrapped
-     * startActivity in a bare runCatching with no logging, so a missing
-     * permission or an unresolvable intent looked identical to a broken button:
-     * nothing happened and the user had no way to tell the app was at fault.
-     *
-     * Returns null on success, or a human-readable reason on failure.
+     * Opens the settings screen that fixes [action], returning null on success or a readable reason
+     * on failure. Failures are surfaced rather than swallowed so a dead button is diagnosable.
      */
     fun openFix(context: Context, action: String): String? {
         val intent: Intent = when (action) {
@@ -216,9 +195,7 @@ object HealthChecker {
                 data = Uri.parse("package:${context.packageName}")
             }
 
-            // Android 13+ grants POST_NOTIFICATIONS inline, so the real fix is
-            // the system dialog; older releases send the user to the app's
-            // notification settings instead.
+            // Android 13+ can grant inline via the system dialog; older releases open app settings.
             "notification_permission" ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     context is Activity
@@ -245,9 +222,7 @@ object HealthChecker {
             else -> return "Unknown fix action: $action"
         }
 
-        // NEW_TASK is required when called with an application context, but it
-        // also breaks the settings screen's back stack when called from an
-        // Activity, so only add it when there is no Activity to launch from.
+        // NEW_TASK is required from an application context, but breaks an Activity's back stack.
         if (context !is Activity) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -262,8 +237,7 @@ object HealthChecker {
                 null
             }
         } catch (error: SecurityException) {
-            // Almost always a missing permission; the message names it so the
-            // failure is diagnosable instead of a dead button.
+            // Almost always a missing permission; name it so the failure is diagnosable.
             "Permission denied opening $action: ${error.message}"
         } catch (error: ActivityNotFoundException) {
             "This device has no screen for $action"

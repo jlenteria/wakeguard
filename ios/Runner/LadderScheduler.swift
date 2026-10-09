@@ -1,17 +1,8 @@
 import Foundation
 import UserNotifications
 
-/// Schedules an alarm as a ladder of independent time-sensitive notifications.
-///
-/// iOS has no equivalent of Android's foreground service: the app cannot run in
-/// the background, cannot keep a sound looping, and cannot be woken to start a
-/// timer. Every design decision here follows from that, so the escalation ladder
-/// is committed to the notification scheduler at the moment the alarm is saved.
-/// That is also why the 64-notification cap has to be budgeted for up front
-/// instead of being discovered when a distant alarm quietly stops firing.
-///
-/// `interruptionLevel = .timeSensitive` is what gets these through Do Not
-/// Disturb and most Focus modes without the Critical Alerts entitlement.
+/// Schedules an alarm as a ladder of time-sensitive notifications. iOS has no
+/// background service, so the ladder is committed up front within the 64-slot cap.
 final class LadderScheduler {
 
     static let shared = LadderScheduler()
@@ -26,8 +17,7 @@ final class LadderScheduler {
         cancel(alarm.id)
         await makeRoom(forLadderOf: alarm.id)
 
-        // Each rung carries its own arithmetic problem, so a wrong answer to one
-        // rung cannot be replayed against the next one.
+        // Each rung gets its own challenge, so answers cannot be replayed.
         let challenges = Dictionary(
             uniqueKeysWithValues: EscalationPolicy.steps.indices.map {
                 (EscalationPolicy.steps[$0].offset, Challenge.make())
@@ -78,8 +68,7 @@ final class LadderScheduler {
         }
     }
 
-    /// Removes the pending ladder but keeps the alarm record. Scheduling a new
-    /// occurrence goes through here, so this must never touch the store.
+    /// Removes the pending ladder but never the alarm record; must not touch the store.
     func cancel(_ alarmId: String) {
         let identifiers = (0..<EscalationPolicy.steps.count)
             .map { "wakeguard.\(alarmId).rung.\($0)" }
@@ -95,12 +84,8 @@ final class LadderScheduler {
 
     // MARK: - Notification budget
 
-    /// iOS keeps only the 64 soonest pending notifications and silently drops the
-    /// rest, which presents to the user as "my alarm didn't fire". Rather than
-    /// refuse to save an alarm, the furthest-future rungs belonging to *other*
-    /// alarms are evicted until this ladder fits. Evicting the latest rungs of a
-    /// ladder degrades it into a shorter ladder, which is recoverable; evicting
-    /// the earliest rung would silently delete that alarm.
+    /// iOS silently drops all but the 64 soonest notifications, so evict the
+    /// furthest-future rungs of *other* alarms; evicting the earliest would delete an alarm.
     private func makeRoom(forLadderOf alarmId: String) async {
         let needed = EscalationPolicy.steps.count
         let pending = await pendingRequests()
@@ -139,15 +124,8 @@ final class LadderScheduler {
 
     // MARK: - Sound
 
-    /// Notification sound for a tier.
-    ///
-    /// Apple's `criticalSoundNamed:withAudioVolume:` factory is not exposed in
-    /// the current SDK's Swift interface, and Critical Alerts is only granted to
-    /// health and safety apps in practice, so the ladder always uses the standard
-    /// named sound and reports the missing entitlement in health checks rather
-    /// than pretending it will cut through the silent switch. If the entitlement
-    /// is ever approved, this needs a small Objective-C shim before the critical
-    /// variant can be used.
+    /// Always the standard named sound: `criticalSoundNamed` is not in the Swift
+    /// interface and Critical Alerts needs an approved entitlement plus an Obj-C shim.
     private func sound(
         for tier: EscalationTier,
         pack: String?
@@ -171,10 +149,8 @@ final class LadderScheduler {
         }
 
         guard !alarm.weekdays.isEmpty else { return base }
-        // The shared encoding is 1=Monday..7=Sunday (Dart's DateTime.weekday),
-        // while Calendar.weekday is 1=Sunday..7=Saturday. Comparing them directly
-        // shifts every alarm by a day in both directions, which is why this
-        // translation exists and why the Android scheduler does the same.
+        // Shared weekdays are 1=Mon..7=Sun; Calendar.weekday is 1=Sun..7=Sat,
+        // so comparing directly would shift alarms by a day.
         let wanted = Set(alarm.weekdays.map(Self.calendarWeekday(fromPlatform:)))
         var probe = base
         for _ in 0..<7 {
@@ -186,15 +162,13 @@ final class LadderScheduler {
         return base
     }
 
-    /// Shared weekday encoding (1=Monday..7=Sunday) to Calendar.weekday
-    /// (1=Sunday..7=Saturday).
+    /// Converts shared weekday (Mon=1..Sun=7) to Calendar.weekday (Sun=1..Sat=7).
     private static func calendarWeekday(fromPlatform weekday: Int) -> Int {
         weekday == 7 ? 1 : weekday + 1
     }
 }
 
-/// UserDefaults-backed alarm set. The Dart layer mirrors this, but native is the
-/// source of truth for anything that must survive a cold launch.
+/// UserDefaults-backed alarm set; native is the source of truth across cold launches.
 final class AlarmStore {
     private let key = "wakeguard.alarms.v2"
 

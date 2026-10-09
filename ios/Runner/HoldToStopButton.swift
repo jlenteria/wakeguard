@@ -1,12 +1,7 @@
 import UIKit
 
-/// The always-available escape hatch.
-///
-/// Every camera- or sensor-based path can be defeated by a dark room, a blanket,
-/// a broken permission, or an unfamiliar face. This button cannot be defeated by
-/// any of those, which is why it is always present and never disabled. The hold
-/// is deliberately long and deliberate so it cannot be triggered by sleep-mashing
-/// on the way to the other challenges.
+/// The always-available escape hatch: never disabled, since camera/sensor paths can
+/// all fail. The long hold prevents sleep-mashing on the way to another challenge.
 final class HoldToStopButton: UIButton {
 
     var onComplete: (() -> Void)?

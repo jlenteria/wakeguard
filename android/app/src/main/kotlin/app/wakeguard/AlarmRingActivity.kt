@@ -40,22 +40,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * The native wake challenge.
- *
- * This is deliberately a plain Android Activity rather than a Flutter route.
- * Dismissing a live alarm must not depend on the Flutter engine booting, a Dart
- * isolate surviving, or a plugin resolving: a Dart crash at 05:00 would
- * otherwise leave a user staring at a screen they cannot leave.
- *
- * Four independent escapes exist and any one of them completes the alarm:
- *
- *  1. Face actions (camera) - the "you are actually awake" check.
- *  2. A remembered pattern sequence - no camera, no light, fully accessible.
- *  3. A QR code away from bed - the physical nudge.
- *  4. A deliberate one minute hold - always available, never conditional.
- *
- * The invariant is that no single failing subsystem can trap the user. If the
- * camera is broken, denied, or facing a dark room, escapes 2 and 4 still work.
+ * Native wake challenge; a plain Activity (not Flutter) so dismissing a live alarm never needs
+ * the engine. Four escapes (face, pattern, QR, hold); no single failing subsystem may trap the user.
  */
 class AlarmRingActivity : AppCompatActivity() {
 
@@ -87,7 +73,6 @@ class AlarmRingActivity : AppCompatActivity() {
     private var actionIndex = 0
     private var pendingQr = ""
 
-    /** Escapes this alarm offers, as read from the launch intent. */
     private var escapes: Set<String> = AlarmDefaults.ALL_ESCAPES
 
     /** Difficulty-derived step count (1-3); also sizes the pattern sequence. */
@@ -106,9 +91,8 @@ class AlarmRingActivity : AppCompatActivity() {
     private var challengeComplete = false
 
     /**
-     * Registered as [RingingState.onStopped] so a snooze can close this screen.
-     * Identity-compared on the way out so a later instance's listener is not
-     * cleared by this one's teardown.
+     * Registered as [RingingState.onStopped] so a snooze can close this screen. Identity-compared
+     * on the way out so a later instance's listener is not cleared by this one's teardown.
      */
     private val stopListener: () -> Unit = {
         runOnUiThread {
@@ -163,18 +147,14 @@ class AlarmRingActivity : AppCompatActivity() {
             override fun handleOnBackPressed() { if (practice) finishAndRemoveTask() }
         })
 
-        // Read once: the launch intent is the only copy of the ringing alarm id,
-        // and re-reading `intent` after a rebind can return a different launch
-        // intent on some OEM builds, which previously left the id missing.
+        // Read once: a rebind can return a different launch intent on some OEM builds.
         alarmId = intent.getStringExtra(NativeAlarmScheduler.EXTRA_ALARM_ID).orEmpty()
         pendingQr = intent.getStringExtra(NativeAlarmScheduler.EXTRA_QR).orEmpty()
         stepCount = intent.getIntExtra(NativeAlarmScheduler.EXTRA_STEPS, 2)
         escapes = AlarmDefaults.escapesFromExtra(
             intent.getStringExtra(NativeAlarmScheduler.EXTRA_ESCAPES),
         )
-        // Face actions only exist when the alarm actually offers the face
-        // escape; with it turned off the camera would otherwise still be able
-        // to complete a challenge the user chose not to set.
+        // Gate face actions on the escape: the camera must not complete an unset challenge.
         actions = if (escapes.contains(AlarmDefaults.ESCAPE_FACE)) {
             pickActions(stepCount)
         } else {
@@ -185,14 +165,10 @@ class AlarmRingActivity : AppCompatActivity() {
         setContentView(buildLayout())
         updateInstructions()
 
-        // A snooze tapped in the notification must close this screen too:
-        // leaving a challenge up for an alarm that is no longer ringing let
-        // the user "complete" an alarm they had already surrendered.
+        // A notification snooze must also close this screen; the alarm is no longer ringing.
         if (!practice) RingingState.onStopped = stopListener
 
-        // Applies the starting mode's visibility and asks for the camera only
-        // when this alarm's chosen escapes actually use one: a pattern-only
-        // alarm must not trigger a permission prompt it will never need.
+        // Applies the starting mode; only camera escapes trigger a permission prompt.
         setMode(mode)
     }
 
@@ -203,12 +179,8 @@ class AlarmRingActivity : AppCompatActivity() {
     }
 
     /**
-     * The mode this alarm starts in, or null when only the hold escape works.
-     *
-     * Null is possible when a QR escape has no code to scan — a record a
-     * newer build wrote, or one restored from a partial backup. The activity
-     * still opens, showing only the hold button, rather than failing to start
-     * on an alarm that is ringing.
+     * Mode this alarm starts in, or null when only the hold escape works (e.g. a QR escape with no
+     * code). The activity still opens with just the hold button rather than failing to start.
      */
     private fun initialMode(): Mode? = when {
         escapes.contains(AlarmDefaults.ESCAPE_TAP) -> Mode.TAP
@@ -218,10 +190,7 @@ class AlarmRingActivity : AppCompatActivity() {
         else -> null
     }
 
-    /**
-     * A random subset of actions, guaranteeing at least one that needs real head
-     * or eye movement so the challenge cannot be passed from bed.
-     */
+    /** Random subset, never all hold-eyes-open, so the challenge cannot be passed from bed. */
     private fun pickActions(count: Int): List<WakeAction> {
         val pool = WakeAction.entries.toMutableList()
         pool.shuffle(random)
@@ -309,9 +278,7 @@ class AlarmRingActivity : AppCompatActivity() {
                 width = 0; height = ViewGroup.LayoutParams.WRAP_CONTENT
             })
         }
-        // Only the escapes this alarm was configured with are offered. The
-        // hold button below is not conditional: it is the one way out that
-        // never depends on a subsystem succeeding.
+        // Only configured escapes are offered; the hold button below is always available.
         if (escapes.contains(AlarmDefaults.ESCAPE_TAP)) {
             addMode(modeButton("Stop alarm") { completeAlarm("tap") })
         }
@@ -328,8 +295,7 @@ class AlarmRingActivity : AppCompatActivity() {
         column.addView(modeRow)
 
         column.addView(spacer(16))
-        // Escape hatch: always present, never conditional on any other
-        // subsystem succeeding.
+        // Escape hatch: always present, never conditional on another subsystem.
         column.addView(
             buildHoldToStopButton(),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76)),
@@ -355,17 +321,13 @@ class AlarmRingActivity : AppCompatActivity() {
                 MotionEvent.ACTION_DOWN -> {
                     val startedAt = android.os.SystemClock.elapsedRealtime()
                     val button = view as Button
-                    // The button must stay enabled while held. A disabled view
-                    // stops delivering touch events to this listener, so the
-                    // ACTION_UP below never arrived and the countdown kept
-                    // running after the finger lifted.
+                    // Keep the button enabled while held: a disabled view stops delivering ACTION_UP.
                     (view.tag as? CountDownTimer)?.cancel()
                     view.tag = object : CountDownTimer(ESCAPE_HOLD_MS, 100) {
                         override fun onTick(millisUntilFinished: Long) {
                             val held = android.os.SystemClock.elapsedRealtime() - startedAt
                             button.alpha = 0.5f + 0.5f * (held / ESCAPE_HOLD_MS.toFloat())
-                            // Minutes:seconds, because a raw "112 s" is one
-                            // more thing to parse at 05:00.
+                            // Minutes:seconds; a raw "112 s" is harder to parse at 05:00.
                             val remaining = ((ESCAPE_HOLD_MS - held) / 1000).toInt()
                             button.text = getString(
                                 R.string.hold_to_stop_progress,
@@ -431,23 +393,18 @@ class AlarmRingActivity : AppCompatActivity() {
     private fun setMode(next: Mode) {
         analysisGeneration++
         mode = next
-        // Cancel any in-flight flash: its end callback would otherwise stamp
-        // pattern copy onto the face or QR screen after a mode switch.
+        // Cancel in-flight flash so its end callback cannot stamp over the next mode.
         patternHandler.removeCallbacksAndMessages(null)
         patternShowing = false
         val patternMode = next == Mode.PATTERN
-        // A camera never gets a preview or a torch button when this alarm's
-        // escapes do not offer one: a black rectangle over "hold to stop" is
-        // one more thing to misread at 05:00.
+        // No preview/torch when the escapes offer no camera: it would just be a black rectangle.
         val showsCamera = (next == Mode.FACE || next == Mode.QR) && cameraModeReachable()
         patternGrid.visibility = if (patternMode) View.VISIBLE else View.GONE
         previewView.visibility = if (showsCamera) View.VISIBLE else View.GONE
         torchButton.visibility = if (showsCamera) View.VISIBLE else View.GONE
         setStatus("")
         updateInstructions()
-        // The camera is acquired lazily rather than in onCreate, so a
-        // pattern-only alarm never asks for a permission it will not use and
-        // the first switch to a camera mode still gets one.
+        // Acquire the camera lazily so a pattern-only alarm never asks for the permission.
         if (showsCamera && cameraProvider == null) {
             if (hasCameraPermission()) {
                 startCamera()
@@ -492,12 +449,8 @@ class AlarmRingActivity : AppCompatActivity() {
     }
 
     /**
-     * Rolls a fresh sequence and flashes it.
-     *
-     * The length comes from the alarm's difficulty (4-6 cells), so the strict
-     * preset demands one more step of working memory than the gentle one. The
-     * sequence never repeats the same cell twice in a row: a doubled cell is a
-     * no-op flash that wastes a step without adding any difficulty.
+     * Rolls a fresh sequence (4-6 cells by difficulty) and flashes it. Never repeats a cell twice in
+     * a row: a doubled cell is a no-op flash that adds no difficulty.
      */
     private fun rollPattern() {
         val length = (3 + stepCount).coerceIn(4, 6)
@@ -541,11 +494,7 @@ class AlarmRingActivity : AppCompatActivity() {
         )
     }
 
-    /**
-     * Input half of the pattern challenge. A wrong cell does not just re-roll:
-     * it immediately replays a full sequence, so guessing the next tap is never
-     * rewarded with a step of progress.
-     */
+    /** A wrong cell replays a full sequence, so guessing the next tap earns no progress. */
     private fun onPatternCell(index: Int) {
         if (challengeComplete || patternShowing) return
         if (index == patternSequence.getOrNull(patternInputIndex)) {
@@ -636,12 +585,7 @@ class AlarmRingActivity : AppCompatActivity() {
         ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    /**
-     * Face recognition needs the front camera; a QR code on a printed card is
-     * held up to the rear camera. Picking the wrong one for the mode makes the
-     * challenge impossible, so the lens follows [mode]. [rebindAnalysis] is
-     * invoked on every mode change, which is what actually swaps the camera.
-     */
+    /** Face needs the front camera, QR the rear; the wrong lens makes the challenge impossible. */
     private fun cameraSelector(): CameraSelector =
         if (mode == Mode.QR) CameraSelector.DEFAULT_BACK_CAMERA
         else CameraSelector.DEFAULT_FRONT_CAMERA
@@ -697,11 +641,7 @@ class AlarmRingActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * The torch is the mitigation for a dark bedroom, which is the single most
-     * likely way a face or QR challenge fails at 05:00. It rides whichever
-     * camera the current mode is using (front for face, rear for QR).
-     */
+    /** Torch mitigates a dark bedroom, the likeliest face/QR failure; rides the current camera. */
     private fun toggleTorch() {
         if (boundCamera?.cameraInfo?.hasFlashUnit() != true) {
             setStatus("No torch on this camera. Try more light or another escape.")
@@ -712,11 +652,7 @@ class AlarmRingActivity : AppCompatActivity() {
         setStatus(if (torchOn) getString(R.string.torch_on) else "")
     }
 
-    /**
-     * Throttled analysis. Running ML Kit on every frame at 640x480 alongside a
-     * foreground service and looping audio caused thermal throttling, which
-     * itself raises the odds of the service being killed.
-     */
+    /** Throttled; every-frame ML Kit caused thermal throttling that risked a service kill. */
     private fun analyze(proxy: ImageProxy) {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastAnalysisAt < ANALYSIS_INTERVAL_MS || challengeComplete || destroyed || (mode != Mode.FACE && mode != Mode.QR) || !analyzing.compareAndSet(false, true)) {
@@ -775,9 +711,7 @@ class AlarmRingActivity : AppCompatActivity() {
     }
 
     private fun evaluateFace(face: Face) {
-        // Empty when the face escape is off for this alarm: the mode cannot be
-        // reached from the UI, but the analyzer may still deliver one frame
-        // after a switch, and indexing into an empty list would crash it.
+        // Guard empty actions; a stray frame after a switch would crash on indexing.
         if (challengeComplete || actions.isEmpty() || mode != Mode.FACE) return
         val leftOpen = face.leftEyeOpenProbability ?: 1f
         val rightOpen = face.rightEyeOpenProbability ?: 1f
@@ -859,9 +793,7 @@ class AlarmRingActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_CAMERA) return
-        // The pattern screen never uses the camera; a late answer to a prompt
-        // raised on another mode must not stamp a camera status onto it. The
-        // flag is still set below when the user switches and is asked again.
+        // Ignore a late camera answer on a non-camera mode; it is asked again on switch.
         if (mode != Mode.FACE && mode != Mode.QR) return
         val granted = grantResults.isNotEmpty() &&
             grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -895,10 +827,7 @@ enum class WakeAction(val instruction: String) {
     turnRight("Turn your head right"),
     holdEyesOpen("Hold your eyes open"),
 }
-/**
- * Shared builders for the intents that launch the challenge, so the scheduler
- * and the service cannot drift apart on intent construction.
- */
+/** Shared intent builders so the scheduler and the service cannot drift apart. */
 object AlarmIntents {
 
     fun ringActivity(context: Context, alarm: StoredAlarm): Intent =

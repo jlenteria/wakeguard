@@ -3,14 +3,8 @@ import AVFoundation
 import UserNotifications
 import UIKit
 
-/// iOS health checks.
-///
-/// The honest reality on iOS: several of the things that break Android alarms
-/// cannot be probed at all. Focus modes are private API, so the app can only ask
-/// the user to verify them. Low Power Mode is likewise invisible. What *can* be
-/// checked is notification authorisation, whether time-sensitive delivery was
-/// granted, and whether the critical-alerts entitlement actually landed, so
-/// those are surfaced with real state rather than optimism.
+/// iOS health checks. Focus and Low Power modes are not introspectable, so only
+/// permissions and real entitlements are surfaced as actual state.
 enum HealthChecker {
 
     static var hasCriticalAlertsEntitlement: Bool {
@@ -22,8 +16,7 @@ enum HealthChecker {
 
     static func capabilities() -> [String: Any] {
         [
-            // iOS cannot loop audio while backgrounded, so this is false even
-            // though the app requests the audio background mode.
+            // Cannot loop audio while backgrounded despite requesting the audio mode.
             "canLoopWhileBackgrounded": false,
             // No public API exists to present UI over the lock screen.
             "canLockScreenTakeover": false,
@@ -181,9 +174,7 @@ enum HealthChecker {
         }
     }
 
-    /// Requesting `.criticalAlert` without the granted entitlement is harmless:
-    /// the system simply does not show a critical prompt. The option is included
-    /// so that a future approved request needs no code change.
+    /// `.criticalAlert` is only requested when granted; asking without it is harmless.
     static func requestAuthorization(completion: @escaping (Bool) -> Void) {
         var options: UNAuthorizationOptions = [.alert, .sound, .badge, .timeSensitive]
         if hasCriticalAlertsEntitlement {
@@ -195,15 +186,12 @@ enum HealthChecker {
     }
 }
 
-/// Plays the bundled ladder through the app's own audio session so the user can
-/// confirm audibility while the app is in the foreground. This is the iOS
-/// equivalent of the Android preflight probe: an alarm volume at zero or a Focus
-/// mode swallowing sound looks identical to a working alarm until it matters.
+/// Plays the ladder through the app's audio session so the user can confirm
+/// audibility in the foreground, since a muted or Focus-swallowed alarm looks fine until it matters.
 enum AudibilityProbe {
     private static var player: AVAudioPlayer?
 
-    /// - Parameter pack: the sound family to preview, so the user hears exactly
-    ///   what the alarm they just edited will ring with.
+    /// - Parameter pack: the family to preview, matching what the edited alarm will ring.
     static func play(pack: String? = nil, completion: @escaping () -> Void) {
         stop()
         let url = AlarmSounds.previewURL(pack: pack)

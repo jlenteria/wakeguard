@@ -5,13 +5,8 @@ import android.content.Context
 import android.content.Intent
 
 /**
- * Reschedules every alarm after events that invalidate previously computed
- * trigger times.
- *
- * `LOCKED_BOOT_COMPLETED` is the important addition: `BOOT_COMPLETED` is only
- * delivered after the first unlock, so a phone that reboots overnight and stays
- * locked would silently lose every alarm. The receiver is `directBootAware` and
- * reads device-protected storage for that reason.
+ * Reschedules alarms after events that invalidate trigger times. LOCKED_BOOT_COMPLETED matters:
+ * BOOT_COMPLETED only arrives after first unlock, so a locked overnight reboot would lose alarms.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -27,8 +22,7 @@ class BootReceiver : BroadcastReceiver() {
 
             else -> Unit
         }
-        // Always make sure the channel exists so a first-run alarm has the
-        // right importance and vibration behaviour.
+        // Ensure the channel exists so a first-run alarm has the right importance/vibration.
         RingingService.createChannel(context)
     }
 }

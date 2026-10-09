@@ -8,8 +8,7 @@ object AlarmDismissal {
         if (session.phase != "ringing" || session.token != token) return
         AlarmEvents.record(context, session, "dismissed", method)
         AlarmSessions.finish(context, session)
-        // The regular next occurrence was armed at fire time. Never rewrite it
-        // or create tomorrow's watchdogs when dismissing today's session.
+        // Tomorrow's occurrence was armed at fire time; do not rewrite it on dismissal.
         if (AlarmPolicy.needsCheckIn(session.alarm.checkInMinutes, session.followUp)) {
             runCatching { StayAwake.schedule(context, session) }.onFailure {
                 AlarmSessions.save(context, session.copy(phase = "done"))

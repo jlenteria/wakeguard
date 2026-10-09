@@ -20,21 +20,8 @@ import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 
 /**
- * Rings the alarm and walks the escalation ladder.
- *
- * Reliability properties this service is built around:
- *
- *  * `START_REDELIVER_INTENT` so the OS restarts it after a kill, resuming the
- *    ladder from [KEY_ELAPSED_MS] rather than starting over.
- *  * A partial wake lock and full-volume playback from the first instant: a
- *    ramp that starts quiet buys a sleeper 45 seconds they never wake up in.
- *  * Audio focus is explicitly requested, so another app holding music focus
- *    cannot duck the alarm to silence.
- *  * The sound is bundled, never the system ringtone: `RingtoneManager` can
- *    return null or a silent file, which produced a completely silent alarm.
- *  * The alarm stream starts at 50% and the user may turn it down, but not off:
- *    if it stays at 0 for 5 seconds it is raised to 20%. The user's pre-alarm
- *    level is written back when the service stops.
+ * Rings the alarm and walks the escalation ladder. START_REDELIVER_INTENT resumes after a kill;
+ * playback is full-volume with audio focus on a bundled tone, and muting is undone after 5 s.
  */
 class RingingService : Service() {
 
@@ -49,10 +36,8 @@ class RingingService : Service() {
         private const val PREFS = "wakeguard.ringing"
 
         /**
-         * Offsets mirror EscalationPolicy.standard. The ladder no longer ramps
-         * volume: playback is at 100% from the first instant, and the steps
-         * exist only to refresh the ringing notification. The tone itself
-         * never changes.
+         * Mirrors EscalationPolicy.standard; steps only refresh the notification, the tone never
+         * changes, and playback is at 100% from the first instant.
          */
         private val STEPS = listOf(
             0L,
@@ -102,13 +87,8 @@ class RingingService : Service() {
         }
 
         /**
-         * Posts the ringing notification without starting the service.
-         *
-         * Used when Android refuses the foreground-service start (API 31+, or a
-         * vendor task killer): the alternative is an alarm that makes no sound
-         * and shows nothing at all, which is the exact failure this app exists
-         * to prevent. The full-screen intent still gives the user a way into
-         * the challenge.
+         * Posts the notification without starting the service, for when Android refuses the
+         * foreground start; a silent, invisible alarm is the failure this app exists to prevent.
          */
         fun postFallbackNotification(context: Context, alarm: StoredAlarm) {
             createChannel(context)
@@ -147,19 +127,14 @@ class RingingService : Service() {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Active WakeGuard alarms"
-                // All audio comes from the MediaPlayer on the alarm stream, which
-                // is routed independently of the channel. Leaving the channel
-                // silent avoids a doubled or mis-routed second copy of the sound.
+                // Channel stays silent; audio comes from the MediaPlayer to avoid a doubled copy.
                 setSound(null, null)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 300, 500)
                 enableLights(true)
                 setShowBadge(false)
-                // No setBypassDnd: that needs ACCESS_NOTIFICATION_POLICY, which
-                // the app deliberately does not hold. The audio is on
-                // STREAM_ALARM, which Do Not Disturb does not silence in its
-                // usual modes; only the notification visibility is affected.
+                // No setBypassDnd: needs ACCESS_NOTIFICATION_POLICY, and DND does not silence STREAM_ALARM.
             }
             context.getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
@@ -189,8 +164,7 @@ class RingingService : Service() {
                 .setFullScreenIntent(fullScreen, true)
                 .setContentIntent(fullScreen)
                 .apply {
-                    // Snoozing is per-alarm; an alarm configured with no snooze
-                    // offers no way to surrender it.
+                    // Snooze is per-alarm; no snooze configured means no way to surrender it.
                     if (alarm.snoozeMinutes > 0) {
                         addAction(
                             0,
@@ -219,10 +193,7 @@ class RingingService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    /**
-     * Separate from [handler] because `scheduleEscalation` clears that one on
-     * every (re)start, which would silently kill the guard.
-     */
+    /** Separate from [handler]: scheduleEscalation clears that one on every (re)start. */
     private val volumeHandler = Handler(Looper.getMainLooper())
 
     /** The pack currently loaded in [player], so a watchdog restart is a no-op. */
@@ -232,10 +203,7 @@ class RingingService : Service() {
     /** When the alarm stream was first seen at 0, or 0 while it is audible. */
     private var silentSinceMs = 0L
 
-    /**
-     * Watches for silence while ringing. The user may lower the volume freely;
-     * this only steps in if the alarm has been muted for [MUTE_GRACE_MS].
-     */
+    /** Watches for silence; the user may lower volume freely, but not mute it for [MUTE_GRACE_MS]. */
     private val volumeGuard = object : Runnable {
         override fun run() {
             enforceAlarmVolume()
@@ -271,9 +239,7 @@ class RingingService : Service() {
             if (current == null) stopSelf(startId)
             return START_NOT_STICKY
         }
-        // Every path out of here must answer startForegroundService() within
-        // five seconds. An unanswered start is a crash on Android 12+, and a
-        // crashed alarm service is strictly worse than one that stops at once.
+        // Must answer startForegroundService() within five seconds; a crash would be worse.
         if (intent == null || incomingId == null) {
             startForeground(notificationId(incomingId), stopNotification(this))
             stopSelf(startId)
@@ -303,8 +269,7 @@ class RingingService : Service() {
 
         // Must be within five seconds of startForegroundService.
         startForeground(notificationId(alarmId), buildNotification(this, alarm))
-        // If a fallback notification was posted because this service could not
-        // start earlier, it is redundant now.
+        // If a fallback notification was posted earlier, it is redundant now.
         cancelFallbackNotification(this, alarmId)
 
         persistElapsed(elapsed)
@@ -320,8 +285,7 @@ class RingingService : Service() {
     }
 
     /**
-     * Walks the ladder, refreshing the notification at each step. The sound does
-     * not change: the chosen tone plays unchanged for the whole ring.
+     * Walks the ladder, refreshing the notification; the chosen tone never changes.
      */
     private fun scheduleEscalation(fromElapsed: Long) {
         handler.removeCallbacksAndMessages(null)
@@ -342,8 +306,7 @@ class RingingService : Service() {
     }
 
     /**
-     * Loops the alarm's chosen tone. Re-entering with the pack that is already
-     * playing is a no-op, so watchdog restarts do not cut the audio.
+     * Loops the chosen tone; re-entering with the pack already playing is a no-op.
      */
     private fun startPlayback() {
         if (playingPack == soundPack && player != null && (preparing || runCatching { player?.isPlaying == true }.getOrDefault(false))) return
@@ -382,9 +345,7 @@ class RingingService : Service() {
                 prepareAsync()
             }
         }.onFailure {
-            // Never let audio setup take down the ringing notification; a
-            // silent alarm with a visible prompt is still recoverable, whereas
-            // a crashed service is not.
+            // Never let audio setup crash the service; a silent alarm with a prompt is recoverable.
             android.util.Log.e("WakeGuard", "Alarm audio failed to start", it)
             runCatching { candidate.release() }
             preparing = false
@@ -435,20 +396,9 @@ class RingingService : Service() {
     }
 
     /**
-     * Volume policy while ringing.
-     *
-     *  * At the start of a ring STREAM_ALARM is set to 50% of its maximum
-     *    ([ALARM_VOLUME_FRACTION]).
-     *  * After that the user is free to turn it up or down: a blaring alarm
-     *    must be something they can tame.
-     *  * The one thing that is not allowed is silence. If the stream stays at 0
-     *    for [MUTE_GRACE_MS], it is raised to [MUTE_RECOVERY_FRACTION] of the
-     *    maximum. Muting again starts a fresh grace period.
-     *
-     * The user's level from before the alarm is written to prefs the first
-     * time (only ever once per ring: [START_REDELIVER_INTENT] would otherwise
-     * re-capture the ring's own level as the "original" after a service kill)
-     * and written back in [onDestroy].
+     * Volume policy: start at [ALARM_VOLUME_FRACTION], the user may turn it down but not mute it —
+     * silence for [MUTE_GRACE_MS] raises it to [MUTE_RECOVERY_FRACTION]. The pre-alarm level is
+     * captured once per ring and restored in [onDestroy].
      */
     private fun enforceAlarmVolume() {
         val audioManager = getSystemService(AudioManager::class.java) ?: return
@@ -546,11 +496,8 @@ object RingingState {
     var activeAlarm: StoredAlarm? = null
 
     /**
-     * Set by [AlarmRingActivity] so a snooze arriving from the notification can
-     * close the challenge screen. Both run in the same process, and a listener
-     * is deliberately used instead of a broadcast because the activity must
-     * close even when the process is one the platform will not let broadcast
-     * to.
+     * Set by [AlarmRingActivity] so a notification snooze can close the challenge screen. A
+     * listener rather than a broadcast, since the process may reject broadcasts.
      */
     @Volatile
     var onStopped: (() -> Unit)? = null

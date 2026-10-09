@@ -2,15 +2,8 @@ import Foundation
 import UserNotifications
 import UIKit
 
-/// Handles the notification actions that stand in for Android's lock-screen
-/// takeover.
-///
-/// `userNotificationCenter(_:didReceive:)` runs in the background even when the
-/// device is locked, which is the only mechanism iOS gives us to make progress
-/// on a live alarm without the user opening the app. The typed-confirm path is
-/// deliberately complete on its own: it validates the answer here, stops the
-/// ladder, and reschedules, with no UI and no camera involved. That matters
-/// because the camera cannot run from the lock screen at all on iOS.
+/// Handles notification actions in place of Android's lock-screen takeover; the
+/// typed-confirm path validates and reschedules with no UI or camera.
 final class AlarmActionHandler {
 
     static let shared = AlarmActionHandler()
@@ -44,8 +37,7 @@ final class AlarmActionHandler {
             if Challenge.matches(input: textResponse.userText, answer: answer) {
                 Task { await dismiss(alarmId: alarmId, method: "typed") }
             }
-            // A wrong answer is a no-op: the next rung fires with a fresh
-            // question, which is the intended escalation behaviour.
+            // A wrong answer is a no-op; the next rung fires with a fresh question.
             completionHandler()
 
         case ActionIdentifier.openChallenge.rawValue:
@@ -117,8 +109,7 @@ private extension StoredAlarm {
             weekdays: weekdays,
             qrValue: qrValue,
             stepCount: stepCount,
-            // Every field has to be copied. Dropping one here silently resets
-            // that setting when an alarm is disabled after ringing.
+            // Copy every field; dropping one silently resets it when disabled after ringing.
             soundPack: soundPack
         )
     }

@@ -14,8 +14,7 @@ import androidx.core.app.NotificationCompat
 /** Native check-ins: no Flutter isolate or long-running timer is required. */
 object StayAwake {
     const val GRACE_MS = 60_000L
-    // Channel sound settings cannot be changed after creation. A new ID applies
-    // the audible default to installations that already created the old channel.
+    // Channel sound is immutable; a new ID gives existing installs the audible default.
     private const val CHANNEL = "wakeguard.checkin.audible.v2"
 
     private fun operation(context: Context, session: AlarmSession, stage: String): PendingIntent =

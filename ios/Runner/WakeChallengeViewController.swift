@@ -2,21 +2,8 @@ import AVFoundation
 import UIKit
 import Vision
 
-/// The native iOS wake challenge.
-///
-/// Presented natively rather than through Flutter, for the same reason as the
-/// Android equivalent: dismissing a live alarm must not depend on the Flutter
-/// engine or the Dart isolate being alive.
-///
-/// Face detection uses Vision rather than ML Kit. Vision is part of the OS, works
-/// fully offline, loads no bundled model, and exposes head pose plus eye and
-/// mouth landmarks. QR detection uses `AVCaptureMetadataOutput`, which is also
-/// built in, so the whole challenge adds zero third-party dependencies.
-///
-/// Four escapes, any one of which completes the alarm: face actions, a typed
-/// answer, a QR code away from bed, and a deliberate ten second hold. On iOS the
-/// typed path matters more than on Android because the camera cannot run from
-/// the lock screen at all.
+/// Native iOS wake challenge, kept out of Flutter so dismissing a live alarm
+/// never depends on the Dart isolate; Vision/AVFoundation add zero dependencies.
 final class WakeChallengeViewController: UIViewController {
 
     private enum Mode { case face, typed, qr }
@@ -277,15 +264,12 @@ final class WakeChallengeViewController: UIViewController {
 
     // MARK: - Capture
 
-    /// The front camera reads faces; the rear camera reads QR codes printed on
-    /// cards. A QR code is meant to be pointed at a phone, so scanning it with
-    /// the selfie camera would make the challenge impossible.
+    /// QR needs the rear camera: a card cannot be scanned by the selfie lens.
     private func position(for selectedMode: Mode) -> AVCaptureDevice.Position {
         selectedMode == .qr ? .back : .front
     }
 
-    /// Swaps the session to the lens [position(for:)] asks for, dropping the
-    /// previous input so the two cameras cannot stack up in one session.
+    /// Swaps to the requested lens, removing the old input so cameras cannot stack.
     private func refitCameraInput(_ wanted: AVCaptureDevice.Position) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -379,8 +363,7 @@ final class WakeChallengeViewController: UIViewController {
         dismiss(animated: true)
     }
 
-    /// Random action subset, guaranteeing at least one action that needs real
-    /// head or eye movement so the challenge cannot be passed from bed.
+    /// Random subset, always including real head/eye movement so it can't pass from bed.
     private static func pickActions(count: Int) -> [WakeAction] {
         var picked = Array(WakeAction.allCases.shuffled().prefix(max(1, min(count, WakeAction.allCases.count))))
         if picked.allSatisfy({ $0 == .holdEyesOpen }), let last = picked.indices.last {
@@ -478,25 +461,19 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
         }
     }
 
-    /// Head yaw in radians. `VNFaceObservation.yaw` is bridged as an `NSNumber`
-    /// in this SDK, so it needs an explicit numeric conversion.
+    /// Head yaw in radians; `VNFaceObservation.yaw` bridges as `NSNumber` here.
     private static func headYaw(_ face: VNFaceObservation) -> Double {
         (face.yaw as NSNumber?)?.doubleValue ?? 0
     }
 
-    /// Points of a landmark region.
-    ///
-    /// `normalizedPoints` is a C array behind an inner pointer, so it cannot be
-    /// indexed as a Swift collection; each read has to go through `pointCount`.
+    /// Landmark points; `normalizedPoints` is a C array, so reads go through `pointCount`.
     private static func points(of region: VNFaceLandmarkRegion2D) -> [CGPoint] {
         (0..<region.pointCount).map { region.normalizedPoints[$0] }
     }
 
-    /// Ratio of eye height to eye width. A closed eye collapses toward zero,
-    /// which is far more reliable than tracking any single landmark point.
+    /// Eye height/width ratio; a closed eye collapses toward zero, unlike one point.
     private static func eyeAperture(_ landmarks: VNFaceLandmarks?) -> CGFloat {
-        // The per-region properties live on VNFaceLandmarks2D; the observation
-        // only vends the base class, so the downcast is required.
+        // Per-region properties need the VNFaceLandmarks2D downcast.
         guard let region = (landmarks as? VNFaceLandmarks2D)?.leftEye
                 ?? (landmarks as? VNFaceLandmarks2D)?.rightEye else { return 1 }
         let points = points(of: region)
@@ -511,9 +488,7 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
         return abs(bottom - top) / width
     }
 
-    /// Cheap smile proxy: how far the mouth corners sit above the inner lips,
-    /// scaled by mouth width. Vision exposes no smile probability, so this is a
-    /// geometric approximation and deliberately has a high threshold.
+    /// Geometric smile proxy: Vision exposes no smile score, so threshold is high.
     private static func smileScore(_ landmarks: VNFaceLandmarks?) -> CGFloat {
         guard let lm = landmarks as? VNFaceLandmarks2D,
               let mouth = lm.outerLips,

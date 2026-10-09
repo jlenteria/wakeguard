@@ -2,11 +2,8 @@ import Flutter
 import UIKit
 import UserNotifications
 
-/// Bridges the Dart settings UI to the native iOS alarm engine.
-///
-/// Everything here is settings-surface only. Ringing never passes through
-/// Flutter: the notification ladder and the native challenge own that path, so a
-/// Dart crash cannot prevent an alarm from being dismissed or stop it sounding.
+/// Bridges the Dart settings UI to the native engine. Ringing never passes through
+/// Flutter, so a Dart crash cannot stop or block dismissal of an alarm.
 final class AlarmEngineChannel {
 
     static let channelName = "app.wakeguard/alarm"

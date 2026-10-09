@@ -66,11 +66,8 @@ class MainActivity : FlutterActivity() {
             null
         }
 
-        // The native store is what actually decides whether an alarm rings, so
-        // the Dart mirror reads it back on every load instead of trusting its
-        // own copy: a one-shot that fired while the app was closed only exists
-        // here, and a mirror that never heard about it kept offering a switch
-        // for an alarm that had already retired.
+        // Read the native store on every load: a one-shot that fired while the app was closed only
+        // exists here, so a stale Dart mirror would keep offering an already-retired alarm.
         "alarms" -> AlarmStore.all(this).map { alarm ->
             mapOf(
                 "id" to alarm.id,
@@ -121,9 +118,7 @@ class MainActivity : FlutterActivity() {
         }
 
         "openFixAction" -> {
-            // Returns null on success or a reason string on failure. Reporting it
-            // over the channel lets the Dart UI show a message, so a fix that
-            // cannot be applied is visible instead of silently doing nothing.
+            // Returns null on success or a reason string; the Dart UI shows it so failures are visible.
             HealthChecker.openFix(
                 this,
                 call.argument<String>("action") ?: return null,
@@ -131,8 +126,7 @@ class MainActivity : FlutterActivity() {
         }
 
         "playAudibilitySample" -> {
-            // Preview the same tone the user just picked in the editor, so
-            // "does this alarm sound right" is answerable before saving.
+            // Preview the picked tone before saving.
             AudibilityProbe.play(this, call.argument<String>("soundPack"))
             null
         }
@@ -182,10 +176,8 @@ class MainActivity : FlutterActivity() {
 }
 
 /**
- * Plays the real bundled ladder through `STREAM_ALARM` so the user can confirm
- * audibility before trusting an alarm. This is the single most valuable check:
- * an alarm stream muted to zero, or a Focus mode swallowing the sound, looks
- * identical to a working alarm until the one morning it matters.
+ * Plays the real bundled tone through STREAM_ALARM so the user can confirm audibility before
+ * trusting an alarm; a muted stream or Focus mode otherwise looks identical to a working alarm.
  */
 object AudibilityProbe {
 
@@ -195,9 +187,8 @@ object AudibilityProbe {
     private var player: MediaPlayer? = null
 
     /**
-     * Plays the exact file a real alarm with this pack plays, looped like the
-     * real thing. It plays at whatever level the phone's alarm volume is
-     * currently set to: the preview never changes the system volume.
+     * Plays the exact file a real alarm uses, looped, at the current alarm volume: the preview never
+     * changes system volume.
      */
     fun play(context: Context, pack: String? = null) {
         stop()

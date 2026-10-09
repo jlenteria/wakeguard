@@ -7,13 +7,8 @@ import android.content.Intent
 import java.util.Calendar
 
 /**
- * Wraps [AlarmManager] so every scheduling decision lives in one place.
- *
- * Uses `setAlarmClock` for the primary trigger because it is exempt from Doze
- * and App Standby, which is the single most important reliability property on
- * Android. Each non-zero escalation rung additionally arms an
- * `setExactAndAllowWhileIdle` watchdog so that a foreground service killed by
- * memory pressure or an OEM task killer is recovered rather than silently lost.
+ * Wraps [AlarmManager] in one place. setAlarmClock for the primary trigger (exempt from Doze);
+ * each rung also arms a setExactAndAllowWhileIdle watchdog to recover a killed service.
  */
 object NativeAlarmScheduler {
 
@@ -39,12 +34,8 @@ object NativeAlarmScheduler {
     )
 
     /**
-     * Converts the cross-platform weekday encoding to [Calendar.DAY_OF_WEEK].
-     *
-     * Dart's [DateTime.weekday] is 1=Monday..7=Sunday, whereas
-     * [Calendar.DAY_OF_WEEK] is 1=Sunday..7=Saturday. Comparing the two encodings
-     * directly is off by one day in both directions, which is why this
-     * translation exists and why LadderScheduler.nextTrigger does the same.
+     * Dart weekday is 1=Mon..7=Sun; [Calendar.DAY_OF_WEEK] is 1=Sun..7=Sat. Comparing them directly
+     * is off by a day, so translate (as LadderScheduler.nextTrigger does).
      */
     private fun toCalendarDayOfWeek(weekday: Int): Int = when (weekday) {
         7 -> Calendar.SUNDAY
@@ -52,16 +43,8 @@ object NativeAlarmScheduler {
     }
 
     /**
-     * Next local wall-clock occurrence of [hour]:[minute] honouring [weekdays].
-     *
-     * [weekdays] uses the shared encoding of 1=Monday..7=Sunday, matching Dart
-     * and the iOS scheduler. [toCalendarDayOfWeek] converts it for
-     * [Calendar.DAY_OF_WEEK].
-     *
-     * Uses [Calendar] rather than millisecond arithmetic so DST transitions and
-     * time-zone changes resolve to a local wall-clock time. On a
-     * spring-forward gap the time normalises forward, which is the same choice
-     * the Dart side makes.
+     * Next local occurrence of [hour]:[minute] honouring [weekdays] (1=Mon..7=Sun). Uses [Calendar]
+     * so DST/zone changes resolve to wall-clock time; matches the Dart side.
      */
     fun nextTrigger(hour: Int, minute: Int, weekdays: Set<Int>, after: Long = System.currentTimeMillis()): Long {
         val calendar = Calendar.getInstance()
@@ -85,8 +68,7 @@ object NativeAlarmScheduler {
     }
 
     fun schedule(context: Context, alarm: StoredAlarm, triggerAt: Long, resetSession: Boolean = true) {
-        // Explicit cleanup also removes old watchdog/snooze identities. Android
-        // replaces matching operations; occurrence checks reject already-delivered events.
+        // Cleanup removes old watchdog/snooze ids; occurrence checks reject delivered events.
         if (resetSession) AlarmSessions.invalidate(context, alarm.id)
         disarm(context, alarm.id)
         val at = if (triggerAt <= alarm.skipUntilMillis) {
@@ -107,12 +89,8 @@ object NativeAlarmScheduler {
     }
 
     /**
-     * Arms the recovery ladder for a ring that starts at [ringStartAt].
-     *
-     * The rungs are relative to the ring's start, not to some earlier
-     * scheduling instant, which is why this is called again when the trigger
-     * fires: a snooze or a watchdog restart begins a ring at a different time
-     * than the one the original schedule assumed.
+     * Arms the recovery ladder for a ring starting at [ringStartAt]. Rungs are relative to the ring
+     * start, so this is re-called on trigger/snooze/watchdog restarts.
      */
     fun armWatchdogs(context: Context, alarm: StoredAlarm, ringStartAt: Long) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -126,8 +104,7 @@ object NativeAlarmScheduler {
                 primaryPendingIntent(context, alarm, index),
             )
         }
-        // Absolute stop so a forgotten alarm eventually gives up and the
-        // user is not woken at 3am by a stale rung.
+        // Absolute stop so a forgotten alarm gives up; no stale rung wakes the user at 3am.
         manager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             ringStartAt + AlarmDefaults.MAX_RINGING_MS,
@@ -136,14 +113,8 @@ object NativeAlarmScheduler {
     }
 
     /**
-     * Arms only the primary trigger for [alarm]'s next occurrence.
-     *
-     * Called when an alarm fires rather than when it is dismissed. Re-arming
-     * only on dismissal meant that anyone who slept through the full fifteen
-     * minutes lost tomorrow's alarm: nothing ever ran to arm it again. The
-     * watchdog rungs are deliberately untouched here, because cancelling them
-     * would disarm the recovery ladder for the ring that is happening right
-     * now.
+     * Arms only the primary trigger for the next occurrence, called at fire time so a slept-through
+     * ring does not lose tomorrow's alarm. Watchdog rungs are left untouched.
      */
     fun armNextTrigger(context: Context, alarm: StoredAlarm) {
         if (!alarm.enabled) return
@@ -209,18 +180,15 @@ object NativeAlarmScheduler {
     fun disarm(context: Context, id: String) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val alarm = AlarmStore.get(context, id) ?: stub(id)
-        // The trigger has its own identity, so cancelling only the rungs left
-        // the main alarm armed: that is how a deleted alarm kept ringing.
+        // Cancel the trigger too: cancelling only rungs once left a deleted alarm ringing.
         runCatching { manager.cancel(triggerPendingIntent(context, alarm)) }
         disarmRungs(context, id)
         runCatching { manager.cancel(snoozePendingIntent(context, id)) }
     }
 
     /**
-     * Cancels only the watchdog rungs, leaving the trigger and any snooze
-     * alone. Snoozing needs exactly this: the rungs of the ring being given up
-     * must not restart it halfway through the snooze window, but tomorrow's
-     * trigger was armed when the alarm fired and must survive.
+     * Cancels only the watchdog rungs, leaving the trigger and snooze alone: snoozing must not let
+     * the rungs restart the ring, but tomorrow's trigger must survive.
      */
     fun disarmRungs(context: Context, id: String) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -251,9 +219,7 @@ object NativeAlarmScheduler {
 
     private fun primaryPendingIntent(context: Context, alarm: StoredAlarm?, rung: Int): PendingIntent {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
-            // The data URI makes each rung a distinct PendingIntent: extras do
-            // not participate in PendingIntent equality, so without this every
-            // rung would collapse into one and cancel() would leak alarms.
+            // A distinct data URI per rung; extras do not count for PendingIntent equality.
             data = android.net.Uri.parse("wakeguard://alarm/${alarm?.id ?: "?"}/$rung")
             putExtra(EXTRA_ALARM_ID, alarm?.id)
             putExtra(EXTRA_LABEL, alarm?.label)

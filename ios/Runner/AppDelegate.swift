@@ -9,9 +9,7 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Categories must exist before any alarm is scheduled, otherwise the first
-    // ladder fires with no actions attached and the user is locked out of the
-    // typed-confirm escape.
+    // Register categories before any alarm is scheduled or the first ladder has no actions.
     NotificationCategories.register()
     UNUserNotificationCenter.current().delegate = self
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -24,8 +22,7 @@ import UserNotifications
     }
   }
 
-  /// iOS reclaims notification slots when the app is force-quit or after a reboot,
-  /// so the ladder has to be rebuilt from native storage on every launch.
+  /// Rebuild the ladder on every launch; iOS reclaims slots on force-quit or reboot.
   override func applicationDidBecomeActive(_ application: UIApplication) {
     super.applicationDidBecomeActive(application)
     Task { await LadderScheduler.shared.rescheduleAll() }
@@ -36,8 +33,7 @@ import UserNotifications
 
 extension AppDelegate {
 
-  /// Show the ladder even when the app happens to be foregrounded. Ringing
-  /// notifications are the alarm, so suppressing them would hide it.
+  /// Show notifications even in the foreground: ringing notifications are the alarm.
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,

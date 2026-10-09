@@ -10,12 +10,8 @@ object AlarmDefaults {
     const val DEFAULT_SNOOZE_MINUTES = 9
 
     /**
-     * Total ring window before the alarm gives up.
-     *
-     * Mirrors `EscalationPolicy.standard.maxRingingDuration` in Dart. One
-     * number, one owner: the scheduler arms the final stop rung with it, the
-     * service times its own teardown with it, and the receiver refuses to
-     * start a ring that is already past it.
+     * Total ring window before the alarm gives up. Mirrors EscalationPolicy.standard.maxRingingDuration
+     * in Dart; the scheduler, service, and receiver all key off this one number.
      */
     const val MAX_RINGING_MS = 15 * 60_000L
 
@@ -29,11 +25,8 @@ object AlarmDefaults {
     val ALL_ESCAPES = setOf(ESCAPE_FACE, ESCAPE_PATTERN, ESCAPE_QR)
 
     /**
-     * Parses an escape set from JSON, a comma-separated extra, or nothing.
-     *
-     * Unknown names are dropped and an empty result falls back to
-     * [ALL_ESCAPES]: a record written by a newer build, or one that lost its
-     * field to a partial write, must still offer a way to dismiss the alarm.
+     * Parses an escape set from JSON, a comma-extra, or nothing. Unknown names are dropped and an
+     * empty result falls back to [ALL_ESCAPES], so a damaged record still offers a way out.
      */
     fun escapesFrom(values: Collection<String>?): Set<String> {
         val parsed = values.orEmpty()
@@ -48,8 +41,7 @@ object AlarmDefaults {
 }
 
 /**
- * Native-side alarm record. This is the single source of truth for anything that
- * has to survive process death, reboot, or the Dart isolate being unavailable.
+ * Native alarm record: source of truth across process death, reboot, or the Dart isolate dying.
  */
 data class StoredAlarm(
     val id: String,
@@ -94,11 +86,8 @@ data class StoredAlarm(
 
     companion object {
         /**
-         * Stable positive notification id for a bare id.
-         *
-         * Also used when disarming an alarm that is no longer in the store:
-         * PendingIntents are matched by request code plus data URI, so the id
-         * alone is enough to find and cancel them.
+         * Stable positive notification id for a bare id. Used even when disarming an alarm no longer
+         * in the store: PendingIntents match on request code plus data URI, so the id suffices.
          */
         fun notificationIdFor(id: String): Int = (id.hashCode() and 0x7FFFFFFF).coerceAtLeast(1)
 
@@ -136,12 +125,8 @@ data class StoredAlarm(
 }
 
 /**
- * Storage for the native alarm set.
- *
- * Backed by device-protected storage so [BootReceiver] can still reschedule
- * alarms after a reboot that has not yet been unlocked. `BOOT_COMPLETED` alone
- * is only delivered after the first unlock, which silently loses overnight
- * alarms on a phone that reboots and stays locked.
+ * Storage for the native alarm set, backed by device-protected storage so [BootReceiver] can
+ * reschedule after a locked reboot (BOOT_COMPLETED only arrives after first unlock).
  */
 object AlarmStore {
     private const val PREFS = "wakeguard.alarms.v2"
@@ -175,17 +160,9 @@ object AlarmStore {
     }
 
     /**
-     * Reads both stores, preferring device-protected on a duplicate.
-     *
-     * The [runCatching] matters: reading credential-encrypted storage before
-     * the first unlock throws, and `LOCKED_BOOT_COMPLETED` arrives in exactly
-     * that state. Without it the boot receiver would crash and every alarm
-     * scheduled for a phone that reboots overnight and stays locked would be
-     * silently lost — the precise failure the direct-boot path exists for.
-     *
-     * Device-protected wins a tie because [put] writes both stores but a write
-     * made before the first unlock can only reach device-protected storage, so
-     * it is the newer of the two whenever they disagree.
+     * Reads both stores, preferring device-protected on a duplicate. [runCatching] matters: reading
+     * credential storage before first unlock throws in LOCKED_BOOT_COMPLETED. Device-protected wins
+     * ties because it can hold the newer pre-unlock write.
      */
     fun all(context: Context): List<StoredAlarm> {
         val fromCredential = runCatching { prefs(context, false)?.all }.getOrNull()
