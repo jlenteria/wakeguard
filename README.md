@@ -1,11 +1,28 @@
-# WakeGuard
+<p align="center">
+  <img src="branding/wakeguard-logo.png" alt="WakeGuard: an orange alarm clock with a checkmark" width="160" />
+</p>
+
+<h1 align="center">WakeGuard</h1>
+
+<p align="center"><strong>Wake up. Complete a challenge. Stay awake.</strong></p>
+
+<p align="center">Free · Offline-first · No ads · No accounts</p>
+
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#running">Getting started</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/VERIFICATION.md">Verification</a>
+</p>
 
 An offline alarm clock for people who dismiss an alarm and fall back asleep.
 Choose a wake challenge, practise it, and optionally ask WakeGuard to check
 you are still up a few minutes later. Alarm readiness is visible before bed.
 
-- **Android is the product.** The iOS target exists but is out of scope for the
-  Play Store work.
+- **In development:** builds and real-device acceptance testing are pending;
+  this is not yet a production-ready release.
+- **Android-first.** An iOS target is included, but current development and
+  release verification focus on Android.
 - **Free, no ads, no analytics, no accounts.** Everything is stored on device.
 - **Camera** is used only while a wake challenge is on screen. Frames are never
   saved or transmitted.
@@ -33,13 +50,13 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
 
 ## What makes an alarm ring
 
-Three layers, each one able to recover a ring the previous one lost:
+Android delivery and recovery use three complementary mechanisms:
 
-1. `AlarmManager.setAlarmClock` — exempt from Doze and App Standby, which is
-   the single most important property on Android.
+1. `AlarmManager.setAlarmClock` schedules user-visible alarm-clock triggers
+   that can fire during Doze.
 2. **Watchdog rungs** at 45 s / 2 min / 5 min / 10 min
-   (`setExactAndAllowWhileIdle`, armed relative to each ring's start) restart
-   the foreground service if an OEM killer takes it down mid-ring.
+   (`setExactAndAllowWhileIdle`, armed relative to each ring's start)
+   attempt to restart the foreground service if it stops mid-ring.
 3. A **fallback notification** if Android refuses the foreground-service start,
    so the failure is visible instead of silent.
 
@@ -57,6 +74,9 @@ lib/
   platform/    AlarmEngine contract + MethodChannel implementation
   ui/          Alarm editor, Health, History, Settings, onboarding
 android/       Scheduler, persisted sessions, check-ins, ringing, health checks
+ios/           iOS target and native platform integration
+branding/      Vector logo and high-resolution artwork
+docs/          Architecture and verification scenarios
 ```
 
 The Dart side keeps a **mirror** of the alarm set for fast rendering; the
@@ -80,15 +100,14 @@ Release signing is **not** set up yet: `android/app/build.gradle.kts` uses the
 debug key and has `isMinifyEnabled = false`. Production signing is required;
 release shrinking should be evaluated with the camera models and sound assets.
 
-## Play Store status
+## Release roadmap
 
-Done:
+Current Android configuration:
 
-- Device-admin and battery-optimisation permissions removed (Play rejects the
-  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` pattern).
+- No device-admin or battery-optimisation exemption permissions.
 - `SCHEDULE_EXACT_ALARM` limited to `maxSdkVersion="32"`; `USE_EXACT_ALARM`
   is the alarm-clock permission on 13+.
-- No `ACCESS_NOTIFICATION_POLICY` (DND bypass needs a weak justification).
+- No `ACCESS_NOTIFICATION_POLICY` permission; DND bypass is not promised.
 - Foreground service is `mediaPlayback`, not `specialUse`.
 - `android.hardware.camera.front` declared `required="false"` so camera-less
   devices are not filtered out.
@@ -96,17 +115,26 @@ Done:
   notification permission block a save; full-screen intent and camera are
   warnings.
 
-Still to do before submission:
+Before a public release:
 
-- Release signing (R8/minify off for now), store listing assets, `allowBackup`
-  privacy policy URL (required even with no data collection because
-  of the camera), and the closed-testing requirement (12 testers, 14 days).
+- Run static analysis, Flutter/native tests, and the real-device scenarios in
+  [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+- Configure production signing and evaluate release shrinking.
+- Capture real screenshots of the alarm editor, challenges, and Stay Awake
+  flow for this README and the store listing.
+- Publish a privacy policy and complete the store's data-safety declarations.
+- Confirm current Play Console testing and submission requirements for the
+  developer account, and complete any required closed testing.
 
-## Constraints
+## Contributing
 
-`opencode.json` denies `flutter analyze/build/run/test`, `dart analyze/run/
-test/compile`, `./gradlew`, `gradle` and `xcodebuild`. Changes made by an
-agent in this repo are therefore **unverified**; run the commands above
-yourself before trusting them. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md)
-for native regression tests and device acceptance scenarios. Source parsing is
-not evidence that a lock-screen alarm works on a device.
+Bug reports, accessibility improvements, and device-testing feedback are welcome.
+For alarm-delivery issues, include the device model, Android version, steps to
+reproduce, and whether the phone was locked or the app was backgrounded.
+
+See [`docs/VERIFICATION.md`](docs/VERIFICATION.md) for checks and device scenarios.
+
+## License
+
+WakeGuard's original source code is licensed under the [MIT License](LICENSE).
+Third-party dependencies and assets retain their respective licenses.

@@ -4,6 +4,11 @@ The implementation includes regression tests, but they have not been executed
 by the coding agent: this project's command permissions prohibit builds/tests.
 `dart format --output=none lib test` checks parsing only, not types or runtime.
 
+The repository's `opencode.json` restricts agent-run build, test, and analysis
+commands, including Flutter/Dart checks, Gradle, and Xcode builds. Developers
+should run the checks below in their own environment; source checks alone do
+not establish that a lock-screen alarm works on a device.
+
 ## Automated checks (developer-run)
 
 - `flutter analyze`
