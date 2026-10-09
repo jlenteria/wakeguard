@@ -1,0 +1,125 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Exact alarms: an alarm clock is the textbook eligible use case.
+         USE_EXACT_ALARM is the alarm-clock permission and needs no Play
+         declaration. SCHEDULE_EXACT_ALARM is the pre-13 fallback only: on
+         Android 13+ it is user-revocable and flagged in review, so it is not
+         requested there. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+
+    <!-- Take over the lock screen when the alarm fires. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- AudioManager.setStreamVolume, used to keep STREAM_ALARM audible while an
+         alarm rings, requires this. It is normal-level (granted at install),
+         but a normal permission that is never declared is never granted, which
+         would make the pin fail silently on every device. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- Requested at runtime by the face challenge; every other escape path
+         works without it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+
+    <application
+        android:label="@string/app_name"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The wake challenge. Deliberately NOT a Flutter activity: dismissing
+             a live alarm must not depend on the Dart isolate. -->
+        <activity
+            android:name=".AlarmRingActivity"
+            android:exported="false"
+            android:directBootAware="true"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:taskAffinity="app.wakeguard.alarm"
+            android:theme="@style/AlarmRingTheme" />
+
+        <!-- mediaPlayback rather than specialUse: the service's only job is
+             looping an alarm tone, which is exactly what this type describes,
+             and specialUse would trigger an extra Play review question. -->
+        <service
+            android:name=".RingingService"
+            android:exported="false"
+            android:directBootAware="true"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false"
+            android:directBootAware="true" />
+
+        <receiver
+            android:name=".SnoozeReceiver"
+            android:exported="false" android:directBootAware="true" />
+        <receiver android:name=".CheckInReceiver" android:exported="false" android:directBootAware="true" />
+
+
+        <!-- directBootAware matters: BOOT_COMPLETED is only delivered after the
+             first unlock, so a phone that reboots overnight and stays locked
+             would silently lose every alarm. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+</manifest>

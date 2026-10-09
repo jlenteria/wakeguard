@@ -1,0 +1,207 @@
+package app.wakeguard
+
+import android.content.Context
+import android.content.SharedPreferences
+import org.json.JSONObject
+
+/** Platform-independent constants shared by every scheduling path. */
+object AlarmDefaults {
+    /** Used when an alarm predates per-alarm snooze or omits the value. */
+    const val DEFAULT_SNOOZE_MINUTES = 9
+
+    /**
+     * Total ring window before the alarm gives up.
+     *
+     * Mirrors `EscalationPolicy.standard.maxRingingDuration` in Dart. One
+     * number, one owner: the scheduler arms the final stop rung with it, the
+     * service times its own teardown with it, and the receiver refuses to
+     * start a ring that is already past it.
+     */
+    const val MAX_RINGING_MS = 15 * 60_000L
+
+    /** Escape names, mirroring the Dart `EscapeKind` enum. Keep them in step. */
+    const val ESCAPE_FACE = "face"
+    const val ESCAPE_PATTERN = "pattern"
+    const val ESCAPE_QR = "qr"
+    const val ESCAPE_TAP = "tap"
+
+    /** Every escape, and the fallback for a record that names none. */
+    val ALL_ESCAPES = setOf(ESCAPE_FACE, ESCAPE_PATTERN, ESCAPE_QR)
+
+    /**
+     * Parses an escape set from JSON, a comma-separated extra, or nothing.
+     *
+     * Unknown names are dropped and an empty result falls back to
+     * [ALL_ESCAPES]: a record written by a newer build, or one that lost its
+     * field to a partial write, must still offer a way to dismiss the alarm.
+     */
+    fun escapesFrom(values: Collection<String>?): Set<String> {
+        val parsed = values.orEmpty()
+            .map { it.trim() }
+            .filter { it in ALL_ESCAPES || it == ESCAPE_TAP }
+            .toSet()
+        return parsed.ifEmpty { ALL_ESCAPES }
+    }
+
+    fun escapesFromExtra(encoded: String?): Set<String> =
+        escapesFrom(encoded?.split(','))
+}
+
+/**
+ * Native-side alarm record. This is the single source of truth for anything that
+ * has to survive process death, reboot, or the Dart isolate being unavailable.
+ */
+data class StoredAlarm(
+    val id: String,
+    val hour: Int,
+    val minute: Int,
+    val label: String,
+    val enabled: Boolean,
+    val repeatDaily: Boolean,
+    val weekdays: Set<Int>,
+    val qrValue: String,
+    val stepCount: Int,
+    /** Generated tone family: pulse | siren | radar | gong. */
+    val soundPack: String = "pulse",
+    /** Minutes the user may surrender this alarm for; 0 disables snoozing. */
+    val snoozeMinutes: Int = AlarmDefaults.DEFAULT_SNOOZE_MINUTES,
+    /** Escapes this alarm offers: a subset of [AlarmDefaults.ALL_ESCAPES]. */
+    val escapes: Set<String> = AlarmDefaults.ALL_ESCAPES,
+    val checkInMinutes: Int = 0,
+    val skipUntilMillis: Long = 0L,
+    val nextTriggerAt: Long = 0L,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("hour", hour)
+        put("minute", minute)
+        put("label", label)
+        put("enabled", enabled)
+        put("repeatDaily", repeatDaily)
+        put("weekdays", org.json.JSONArray(weekdays.toList()))
+        put("qrValue", qrValue)
+        put("stepCount", stepCount)
+        put("soundPack", soundPack)
+        put("snoozeMinutes", snoozeMinutes)
+        put("escapes", org.json.JSONArray(escapes.sorted()))
+        put("checkInMinutes", checkInMinutes)
+        put("skipUntilMillis", skipUntilMillis)
+        put("nextTriggerAt", nextTriggerAt)
+    }
+
+    /** Stable positive notification id derived from the opaque string id. */
+    val notificationId: Int get() = notificationIdFor(id)
+
+    companion object {
+        /**
+         * Stable positive notification id for a bare id.
+         *
+         * Also used when disarming an alarm that is no longer in the store:
+         * PendingIntents are matched by request code plus data URI, so the id
+         * alone is enough to find and cancel them.
+         */
+        fun notificationIdFor(id: String): Int = (id.hashCode() and 0x7FFFFFFF).coerceAtLeast(1)
+
+        fun fromJson(raw: String): StoredAlarm? = runCatching {
+            val json = JSONObject(raw)
+            StoredAlarm(
+                id = json.getString("id"),
+                hour = json.getInt("hour"),
+                minute = json.getInt("minute"),
+                label = json.optString("label", "Wake up"),
+                enabled = json.optBoolean("enabled", true),
+                repeatDaily = json.optBoolean("repeatDaily", true),
+                weekdays = json.optJSONArray("weekdays")
+                    ?.let { array -> (0 until array.length()).map { array.getInt(it) } }
+                    ?.filter { it in 1..7 }?.toSet()
+                    ?: emptySet(),
+                qrValue = json.optString("qrValue", ""),
+                stepCount = json.optInt("stepCount", 2),
+                soundPack = json.optString("soundPack", "pulse"),
+                snoozeMinutes = json.optInt(
+                    "snoozeMinutes",
+                    AlarmDefaults.DEFAULT_SNOOZE_MINUTES,
+                ).coerceIn(0, 60),
+                escapes = AlarmDefaults.escapesFrom(
+                    json.optJSONArray("escapes")?.let { array ->
+                        (0 until array.length()).map { array.getString(it) }
+                    },
+                ),
+                checkInMinutes = json.optInt("checkInMinutes", 0).takeIf { it in setOf(0, 3, 5, 10) } ?: 0,
+                skipUntilMillis = json.optLong("skipUntilMillis", 0L),
+                nextTriggerAt = json.optLong("nextTriggerAt", 0L),
+            )
+        }.getOrNull()
+    }
+}
+
+/**
+ * Storage for the native alarm set.
+ *
+ * Backed by device-protected storage so [BootReceiver] can still reschedule
+ * alarms after a reboot that has not yet been unlocked. `BOOT_COMPLETED` alone
+ * is only delivered after the first unlock, which silently loses overnight
+ * alarms on a phone that reboots and stays locked.
+ */
+object AlarmStore {
+    private const val PREFS = "wakeguard.alarms.v2"
+    private const val DEVICE_PROTECTED_PREFS = "wakeguard.alarms.v2.dp"
+
+    private fun prefs(context: Context, deviceProtected: Boolean): SharedPreferences? =
+        runCatching {
+            if (deviceProtected &&
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N
+            ) {
+                context.createDeviceProtectedStorageContext()
+                    .getSharedPreferences(DEVICE_PROTECTED_PREFS, Context.MODE_PRIVATE)
+            } else {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            }
+        }.getOrNull()
+
+    fun put(context: Context, alarm: StoredAlarm) {
+        val payload = alarm.toJson().toString()
+        // Device-protected is canonical, including before first unlock.
+        check(prefs(context, true)?.edit()?.putString(alarm.id, payload)?.commit() == true) {
+            "Could not persist alarm configuration"
+        }
+        prefs(context, false)?.edit()?.putString(alarm.id, payload)?.apply()
+    }
+
+    fun remove(context: Context, id: String) {
+        // Tombstones prevent an inaccessible/stale credential mirror resurrecting a deletion.
+        check(prefs(context, true)?.edit()?.putString(id, "")?.commit() == true) { "Could not remove alarm configuration" }
+        prefs(context, false)?.edit()?.remove(id)?.commit()
+    }
+
+    /**
+     * Reads both stores, preferring device-protected on a duplicate.
+     *
+     * The [runCatching] matters: reading credential-encrypted storage before
+     * the first unlock throws, and `LOCKED_BOOT_COMPLETED` arrives in exactly
+     * that state. Without it the boot receiver would crash and every alarm
+     * scheduled for a phone that reboots overnight and stays locked would be
+     * silently lost — the precise failure the direct-boot path exists for.
+     *
+     * Device-protected wins a tie because [put] writes both stores but a write
+     * made before the first unlock can only reach device-protected storage, so
+     * it is the newer of the two whenever they disagree.
+     */
+    fun all(context: Context): List<StoredAlarm> {
+        val fromCredential = runCatching { prefs(context, false)?.all }.getOrNull()
+            ?: emptyMap()
+        val fromDeviceProtected = runCatching { prefs(context, true)?.all }.getOrNull()
+            ?: emptyMap()
+        return (fromCredential + fromDeviceProtected).values
+            .filterIsInstance<String>()
+            .mapNotNull(StoredAlarm::fromJson)
+            .distinctBy { it.id }
+            .sortedBy { it.hour * 60 + it.minute }
+    }
+
+    fun get(context: Context, id: String): StoredAlarm? {
+        val raw = runCatching { prefs(context, true)?.getString(id, null) }.getOrNull()
+            ?: runCatching { prefs(context, false)?.getString(id, null) }.getOrNull()
+        return raw?.let(StoredAlarm::fromJson)
+    }
+}

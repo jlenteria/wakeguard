@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Theme applied to the Android Window as soon as the process has started.
+         This theme determines the color of the Android Window while your
+         Flutter UI initializes, as well as behind your Flutter UI while its
+         running.
+
+         This Theme is only used starting with V2 of Flutter's Android embedding. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+
+    <!-- The wake challenge is a standalone, Flutter-free Activity. It must look
+         alarm-like immediately, with no light-mode flash before it renders.
+
+         The parent MUST be an AppCompat theme. AlarmRingActivity extends
+         AppCompatActivity (needed for onBackPressedDispatcher, which is how the
+         stray-back-gesture guard works), and AppCompatActivity throws
+         IllegalStateException in onCreate when the theme does not descend from
+         Theme.AppCompat. A plain @android:style/Theme.Black parent compiles
+         without complaint and then crashes the instant the user taps the
+         notification, which is exactly the failure this comment guards against. -->
+    <style name="AlarmRingTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <!-- windowShowWhenLocked / windowTurnScreenOn are API 27+, so they are
+             applied at runtime by AlarmRingActivity rather than themed here.
+             FLAG_TURN_SCREEN_ON covers older devices. -->
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <!-- Stop the system inverting the alarm UI for a light status bar. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorAccent">@color/wakeguard_accent</item>
+    </style>
+
+</resources>

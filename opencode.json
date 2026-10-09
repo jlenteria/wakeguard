@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "flutter analyze*": "deny",
+      "flutter build*": "deny",
+      "flutter run*": "deny",
+      "flutter test*": "deny",
+      "dart analyze*": "deny",
+      "dart run*": "deny",
+      "dart test*": "deny",
+      "dart compile*": "deny",
+      "./gradlew*": "deny",
+      "gradle*": "deny",
+      "xcodebuild*": "deny",
+      "make*": "deny"
+    }
+  }
+}

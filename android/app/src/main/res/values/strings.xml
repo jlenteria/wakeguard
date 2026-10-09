@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WakeGuard</string>
+    <string name="ringing_prompt">Complete your wake check</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="action_torch">Torch</string>
+    <string name="hold_to_stop">Hold for 2 minutes to stop the alarm</string>
+    <string name="hold_to_stop_progress">Keep holding... %1$s</string>
+    <string name="pattern_instruction">Watch the pattern, then tap it back</string>
+    <string name="pattern_repeat">Now repeat it</string>
+    <string name="pattern_wrong">Not it. Watch a new one.</string>
+    <string name="pattern_progress">%1$d of %2$d</string>
+    <string name="no_camera_needed">No camera needed</string>
+    <string name="qr_instruction">Scan the code you placed away from bed</string>
+    <string name="get_up_and_find_it">Get up and find it</string>
+    <string name="camera_unavailable">Camera unavailable</string>
+    <string name="use_pattern_escape">Use the Pattern or hold-to-stop escape</string>
+    <string name="camera_failed">Camera could not start</string>
+    <string name="camera_denied">Camera permission denied</string>
+    <string name="only_hold_escape">Hold the button below for 2 minutes to stop the alarm</string>
+    <string name="step_counter">Step %1$d of %2$d</string>
+    <string name="no_face_found">No face found. More light? Try the torch.</string>
+    <string name="more_than_one_face">More than one face. Only one person, please.</string>
+    <string name="wrong_code">Wrong code. Keep looking.</string>
+    <string name="keep_eyes_open">Keep your eyes open... %1$d</string>
+    <string name="torch_on">Torch on - hold the phone near your face.</string>
+    <string name="alarm_dismissed">Alarm dismissed</string>
+</resources>

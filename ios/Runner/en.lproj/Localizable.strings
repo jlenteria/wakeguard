@@ -1,0 +1,60 @@
+/*
+  Localizable.strings (English)
+  WakeGuard
+
+  Localised copy lives in a strings file rather than inline literals so the alarm
+  wording can be reviewed and translated without touching logic. Every key below
+  is referenced from Runner/*.swift through NSLocalizedString.
+*/
+
+/* Notification actions */
+"notification.action.awake" = "I'm awake";
+"notification.action.confirm" = "Type to confirm";
+"notification.action.confirm.send" = "Confirm";
+"notification.action.confirm.placeholder" = "Answer";
+"notification.ringing.still" = "Still ringing";
+
+/* Challenge */
+"challenge.prompt" = "What is %d \u00d7 %d?";
+"challenge.type_instruction" = "Type the answer";
+"challenge.no_camera" = "No camera needed";
+"challenge.confirm" = "Confirm";
+"challenge.hold" = "Hold 10 seconds to stop";
+"challenge.hold.hint" = "Press and hold for ten seconds";
+"challenge.answer.label" = "Answer";
+"challenge.step" = "Step %d of %d";
+"challenge.enter_first" = "Enter an answer first.";
+"challenge.not_quite" = "Not quite. New question.";
+"challenge.camera_unavailable" = "Camera unavailable";
+"challenge.camera_denied" = "Camera access is off, so face and QR checks are unavailable. Typed and hold-to-stop still work.";
+"challenge.use_type" = "Use Type or Hold to stop";
+"challenge.no_face" = "No face detected";
+"challenge.keep_open" = "Keep your eyes open — %d";
+"challenge.wrong_code" = "That's not the right code.";
+"challenge.qr_instruction" = "Scan the code away from bed";
+"challenge.get_up" = "You will have to get up";
+
+/* Face actions */
+"action.blink" = "Blink twice";
+"action.smile" = "Smile";
+"action.turn_left" = "Turn your head left";
+"action.turn_right" = "Turn your head right";
+"action.hold_open" = "Keep your eyes open for 5 seconds";
+
+/* Health */
+"health.notifications" = "Notifications";
+"health.notifications.ok" = "Alarms are allowed to be delivered.";
+"health.notifications.bad" = "Notifications are blocked. Alarms cannot fire.";
+"health.time_sensitive" = "Time Sensitive";
+"health.time_sensitive.ok" = "Alarms can break through Do Not Disturb.";
+"health.time_sensitive.bad" = "Time Sensitive delivery is off, so Do Not Disturb and Focus can silence alarms.";
+"health.focus" = "Focus modes";
+"health.focus.ok" = "Add WakeGuard in Settings > Focus so a scheduled Focus cannot silence the alarm.";
+"health.critical" = "Critical Alerts";
+"health.critical.ok" = "Granted. Alarms can sound even with the ringer switched off.";
+"health.critical.bad" = "Not granted. The ringer switch will silence alarms.";
+"health.budget" = "Notification slots";
+"health.budget.ok" = "%d of %d slots in use.";
+"health.budget.bad" = "%d of %d usable slots in use. Some later alarms will not fire.";
+"health.silent" = "Ringer switch";
+"health.silent.ok" = "Keep the side switch on: iOS mutes non-critical alerts when it is silenced.";

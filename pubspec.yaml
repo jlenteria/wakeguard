@@ -1,0 +1,28 @@
+name: wakeguard
+description: "Offline alarms with wake-up challenges and optional Stay Awake check-ins."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+# Note: there are deliberately no camera / ML Kit / barcode plugins here.
+# The ringing challenge is implemented natively on each platform so that
+# dismissing an alarm never depends on the Flutter engine booting, and so a
+# Dart exception can never brick a live alarm. See docs/ARCHITECTURE.md.
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.5.3
+  qr_flutter: ^4.1.0
+  share_plus: ^13.3.1
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
