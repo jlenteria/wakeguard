@@ -77,27 +77,23 @@ object HealthChecker {
             ),
         )
 
-        // The camera matters only when some alarm actually asks for a face
-        // challenge. A user running pattern-only alarms should not see a
-        // warning they can never clear, nor be nudged into granting a
-        // permission they deliberately turned off.
+        // Report the actual permission even before a camera alarm is saved:
+        // Dart checks the draft's escapes to decide whether saving is blocked.
         val faceUsed = AlarmStore.all(context).any { it.enabled &&
             (AlarmDefaults.ESCAPE_FACE in it.escapes || (AlarmDefaults.ESCAPE_QR in it.escapes && it.qrValue.isNotBlank())) }
         add(
             health(
                 id = "camera",
                 label = "Camera permission",
-                passing = hasCameraPermission(context) || !faceUsed,
+                passing = hasCameraPermission(context),
                 ok = if (faceUsed) {
                     "Face and QR challenges are available."
                 } else {
                     "No enabled alarm needs the camera."
                 },
-                bad = "Camera challenges unavailable. Hold-to-stop is always available; Pattern works when selected.",
+                bad = "Enable Camera in app permissions before saving or enabling Face/QR alarms. Pattern and Tap alarms do not need it.",
                 action = "camera",
-                // A phone with no front camera, or a denied permission, must
-                // still be able to save alarms: the other escapes exist for
-                // exactly this case.
+                // Globally advisory; blocking only for a Face/QR draft.
                 severity = HealthSeverityValue.warning,
             ),
         )
@@ -198,7 +194,7 @@ object HealthChecker {
             ?.canUseFullScreenIntent() == true
     }
 
-    private fun hasCameraPermission(context: Context): Boolean =
+    fun hasCameraPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 

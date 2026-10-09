@@ -53,6 +53,10 @@ class AlarmController extends ChangeNotifier {
   List<HealthCheck> get unresolvedChecks =>
       _checks.where((c) => c.severity == HealthSeverity.blocking).toList();
 
+  bool cameraPermissionMissingFor(Alarm alarm) =>
+      (alarm.escapes.contains(EscapeKind.face) || alarm.escapes.contains(EscapeKind.qr)) &&
+      _checks.any((check) => check.id == 'camera' && check.severity != HealthSeverity.ok);
+
   /// Alarms the platform must drop because of its pending-slot cap. On iOS
   /// these genuinely will not ring, so this is surfaced in the UI. Empty on
   /// platforms that report no cap (Android), where everything rings.
@@ -201,7 +205,12 @@ class AlarmController extends ChangeNotifier {
 
   Future<void> upsert(Alarm alarm) => _queued(() => _upsert(alarm));
 
-  Future<void> _upsert(Alarm alarm) async {
+  Future<void> _upsert(Alarm alarm, {bool requireCamera = true}) async {
+    await _refreshHealth();
+    if (requireCamera && cameraPermissionMissingFor(alarm)) {
+      _setState(() => _lastError = 'Alarm not saved. Enable camera permission in Health for Face/QR challenges.');
+      return;
+    }
     final exists = _alarms.any((a) => a.id == alarm.id);
     final next = exists
         ? _alarms.map((a) => a.id == alarm.id ? alarm : a).toList()
@@ -229,6 +238,11 @@ class AlarmController extends ChangeNotifier {
 
   Future<void> setEnabled(Alarm alarm, bool enabled) => _queued(() async {
     await _refreshHealth();
+    if (enabled && cameraPermissionMissingFor(alarm)) {
+      const message = 'Enable camera permission in Health before turning on this Face/QR alarm.';
+      _setState(() => _lastError = message);
+      throw StateError(message);
+    }
     if (enabled && unresolvedChecks.isNotEmpty) {
       final message =
           'Cannot enable alarm: ${unresolvedChecks.map((c) => c.label).join(', ')}. Open Health to fix it.';
@@ -236,7 +250,7 @@ class AlarmController extends ChangeNotifier {
       throw StateError(message);
     }
     final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
-    await _upsert(current.copyWith(enabled: enabled, skipUntilMillis: 0));
+    await _upsert(current.copyWith(enabled: enabled, skipUntilMillis: 0), requireCamera: enabled);
   });
 
   Future<void> duplicate(Alarm alarm) => _queued(() async {

@@ -6,9 +6,10 @@ import '../platform/alarm_engine.dart';
 /// The screen that actually addresses the original problem: an alarm that
 /// silently failed to ring because the OS was configured against the app.
 class HealthPage extends StatelessWidget {
-  const HealthPage({super.key, required this.controller});
+  const HealthPage({super.key, required this.controller, this.onReturnToAlarm});
 
   final AlarmController controller;
+  final VoidCallback? onReturnToAlarm;
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +23,15 @@ class HealthPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
+          if (onReturnToAlarm != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                onPressed: onReturnToAlarm,
+                icon: const Icon(Icons.alarm),
+                label: const Text('Return to alarm'),
+              ),
+            ),
           if (blocking.isNotEmpty) _BlockingBanner(count: blocking.length),
           for (final check in controller.checks)
             _HealthTile(check: check, onFix: controller.openFix),

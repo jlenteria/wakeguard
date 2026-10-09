@@ -6,6 +6,7 @@ import 'core/alarm.dart';
 import 'core/alarm_controller.dart';
 import 'core/alarm_repository.dart';
 import 'core/settings.dart';
+import 'core/wake_up_qr.dart';
 import 'platform/alarm_engine.dart';
 import 'ui/alarm_editor.dart';
 import 'ui/health_page.dart';
@@ -111,6 +112,7 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
   int _tab = 0;
   Timer? _clock;
   bool _foreground = true;
+  Alarm? _pendingCameraDraft;
 
   @override
   void initState() {
@@ -174,9 +176,14 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
                   children: [
                     AlarmListView(
                       controller: controller,
+                      onOpenHealth: () => setState(() => _tab = 1),
                       onOpen: (alarm) => _openEditor(context, existing: alarm),
                     ),
-                    HealthPage(controller: controller),
+                     HealthPage(
+                       controller: controller,
+                       onReturnToAlarm: _pendingCameraDraft == null ? null
+                           : () => _openEditor(context, existing: _pendingCameraDraft),
+                     ),
                     HistoryPage(controller: controller),
                     SettingsPage(
                       controller: controller,
@@ -230,12 +237,24 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
   }
 
   Future<void> _openEditor(BuildContext context, {Alarm? existing}) async {
+    String sharedQr;
+    try {
+      final codes = widget.controller.alarms.map((a) => a.qrValue.trim()).where((code) => code.isNotEmpty);
+      sharedQr = await WakeUpQrRepository().getOrCreate(
+          preferredValue: codes.isEmpty ? null : codes.first);
+    } catch (error) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load wake-up QR: $error')));
+      return;
+    }
+    if (!context.mounted) return;
     final draft = await showModalBottomSheet<Alarm>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => AlarmEditor(
         engine: widget.engine,
+        sharedQrValue: sharedQr,
         existing: existing,
         defaultSnoozeMinutes: widget.settings.settings.defaultSnoozeMinutes,
         canCheckIn: widget.controller.capabilities?.canCheckIn ?? false,
@@ -247,6 +266,13 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
     // Re-check right now: the user may have just fixed (or revoked) something.
     await widget.controller.refreshHealth();
     if (!mounted) return;
+    if (widget.controller.cameraPermissionMissingFor(draft)) {
+      setState(() { _pendingCameraDraft = draft; _tab = 1; });
+      ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(
+        content: Text('Alarm not saved. Enable Camera in Health, then tap Return to alarm to save your draft.'),
+      ));
+      return;
+    }
     final unresolved = widget.controller.unresolvedChecks;
     if (unresolved.isNotEmpty) {
       // Keep the alarm rather than throwing the draft away. It cannot ring
@@ -275,6 +301,7 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
     await widget.controller.upsert(draft);
     if (!mounted) return;
     final error = widget.controller.lastError;
+    if (error == null) setState(() => _pendingCameraDraft = null);
     final at = widget.controller.nextFireTime(draft.id);
     final message = error ?? (!draft.enabled ? 'Saved, switched off.' : at == null
         ? 'Saved. Check alarm readiness.'
@@ -288,9 +315,11 @@ class AlarmListView extends StatelessWidget {
     super.key,
     required this.controller,
     required this.onOpen,
+    this.onOpenHealth,
   });
 
   final AlarmController controller;
+  final VoidCallback? onOpenHealth;
 
   /// Opens the editor for an existing alarm; tapping a row used to only
   /// toggle the switch, which left no way to change a saved alarm at all.
@@ -329,8 +358,13 @@ class AlarmListView extends StatelessWidget {
                           alarm: alarm,
                           plannedAt: controller.nextFireTime(alarm.id),
                           onOpen: onOpen,
-                          onToggle: (value) =>
-                              controller.setEnabled(alarm, value),
+                           onToggle: (value) async {
+                             try {
+                               await controller.setEnabled(alarm, value);
+                             } finally {
+                               if (value && controller.cameraPermissionMissingFor(alarm)) onOpenHealth?.call();
+                             }
+                           },
                           onDelete: () => controller.delete(alarm),
                            onRestore: () => controller.upsert(alarm),
                            onDuplicate: () => controller.duplicate(alarm),
@@ -495,6 +529,8 @@ class _AlarmTile extends StatelessWidget {
           SnackBar(
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 5),
+            // Action snackbars persist by default; Undo has a five-second window.
+            persist: false,
             content: Text('Deleted the $timeLabel alarm'),
             action: SnackBarAction(
               label: 'Undo',

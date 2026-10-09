@@ -17,6 +17,7 @@ class _FakeEngine implements AlarmEngine {
   final List<Alarm> store = [];
   final List<String> log = [];
   bool failSchedule = false;
+  List<HealthCheck> healthChecks = const [];
   bool failStopAudibility = false;
   Completer<void>? scheduleGate;
 
@@ -59,7 +60,7 @@ class _FakeEngine implements AlarmEngine {
   Future<void> dismiss(String alarmId, {required String method}) async {}
 
   @override
-  Future<List<HealthCheck>> health() async => const [];
+  Future<List<HealthCheck>> health() async => healthChecks;
 
   @override
   Future<List<String>> notificationsReady() async => const [];
@@ -110,6 +111,36 @@ void main() {
     expect(controller.alarms, isEmpty);
     expect(controller.fatalError, isNull);
     expect(controller.loading, isFalse);
+  });
+
+  test('camera draft is not persisted until permission is granted', () async {
+    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
+      detail: 'Permission denied', severity: HealthSeverity.warning, action: 'camera')];
+    final draft = _alarm('camera').copyWith(escapes: {EscapeKind.qr}, qrValue: 'SHARED');
+    await controller.upsert(draft);
+    expect(controller.alarms, isEmpty);
+    expect(await AlarmRepository().load(), isEmpty);
+    expect(engine.store, isEmpty);
+    expect(controller.lastError, contains('camera permission'));
+
+    await controller.upsert(_alarm('pattern').copyWith(escapes: {EscapeKind.pattern}));
+    expect(engine.store.single.id, 'pattern');
+
+    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
+      detail: 'Granted', severity: HealthSeverity.ok)];
+    await controller.upsert(draft);
+    expect(engine.store.any((alarm) => alarm.id == 'camera'), isTrue);
+  });
+
+  test('camera permission blocks enabling but never blocks disabling', () async {
+    final alarm = _alarm('face');
+    await controller.upsert(alarm);
+    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
+      detail: 'Denied', severity: HealthSeverity.warning)];
+    await controller.setEnabled(alarm, false);
+    expect(controller.alarms.single.enabled, isFalse);
+    await expectLater(controller.setEnabled(controller.alarms.single, true), throwsStateError);
+    expect(controller.alarms.single.enabled, isFalse);
   });
 
   test('upsert saves to the mirror and arms the platform', () async {

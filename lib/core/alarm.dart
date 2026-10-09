@@ -124,7 +124,7 @@ class Alarm {
 
   /// Ways out of the ring this alarm offers.
   ///
-  /// The two-minute hold is always available regardless of this set: no
+  /// The one-minute hold is always available regardless of this set: no
   /// configuration may leave a user with no way out of a live alarm.
   final Set<EscapeKind> escapes;
 

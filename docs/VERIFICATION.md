@@ -45,7 +45,10 @@ emulator is insufficient evidence for OEM, camera, volume or lock-screen behavio
    or follow-up should be created. Repeat while a real alarm rings: practice
    must be refused.
 9. Enable a three-minute Stay Awake check. Dismiss, wait for the notification,
-   confirm inside one minute. No follow-up; History shows Confirmed.
+   verify a short system notification sound, then confirm inside one minute.
+   No follow-up; History shows Confirmed. Repeat on an upgraded installation
+   that previously created the check-in channel. Updating an already-visible
+   prompt must not replay its sound; system channel sound settings remain honored.
 10. Leave a check unanswered. Exactly one follow-up rings, has no snooze,
     and cannot create a second check-in after dismissal or timeout.
 11. Edit/delete/disable during a pending check-in. Old prompt/confirmation and
@@ -57,7 +60,9 @@ emulator is insufficient evidence for OEM, camera, volume or lock-screen behavio
 14. Switch Face -> Pattern while camera startup/inference is pending. No
     camera prompt/analysis may overwrite the pattern or complete an old mode.
 15. Test camera denial, QR mismatch, no front camera, dark room and TalkBack.
-    Selected alternatives and the hold escape must remain usable.
+     Selected alternatives and the hold escape must remain usable.
+     Holding for one uninterrupted minute stops the alarm; releasing early
+     or leaving the screen resets the hold countdown.
 16. Use large system text, narrow screens and both themes; verify editor,
     history and native buttons remain readable/reachable.
 17. Clear history. Streak and local history clear; existing alarms/check-ins
@@ -68,5 +73,13 @@ emulator is insufficient evidence for OEM, camera, volume or lock-screen behavio
     Changing wall time or time zone only recalculates future triggers.
 
 Record device model, Android version, build revision, scenario and actual result.
+For shared QR reuse, create two QR alarms and verify both accept the QR shown
+in Settings after restarting the app. An existing custom alarm must keep its
+old code until explicitly saved with "Use shared wake-up QR". Generating a custom
+code for one alarm must not change the shared code or any other alarm.
+With camera permission denied, saving a Face/QR draft must leave stored alarms
+unchanged and open Health. Grant permission through Camera's Fix action, then
+use Return to alarm to save the retained draft. Pattern/Tap alarms must still
+save without camera permission; disabling an existing alarm must always work.
 Source-level improvements are not measured battery/performance results: profile
 camera inference, app startup, memory and APK size after a successful build.

@@ -14,7 +14,8 @@
       "./gradlew*": "deny",
       "gradle*": "deny",
       "xcodebuild*": "deny",
-      "make*": "deny"
+      "make*": "deny",
+      "*git diff*": "allow"
     }
   }
 }

@@ -99,6 +99,36 @@ void main() {
     expect(find.byIcon(Icons.volume_up_outlined), findsNWidgets(4));
   });
 
+  testWidgets('new QR alarms reuse the shared code across editor sessions', (tester) async {
+    for (var i = 0; i < 2; i++) {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: AlarmEditor(
+        key: UniqueKey(), sharedQrValue: 'SHARED-WAKE-UP',
+      ))));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.widgetWithText(FilterChip, 'QR code'));
+      await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(find.widgetWithText(TextField, 'QR code secret'));
+      expect(field.controller!.text, 'SHARED-WAKE-UP');
+      expect(find.text('Show wake-up QR'), findsOneWidget);
+    }
+  });
+
+  testWidgets('existing QR stays custom until explicitly switched to shared', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AlarmEditor(
+      sharedQrValue: 'SHARED-WAKE-UP',
+      existing: Alarm(id: 'old', hour: 7, minute: 0, label: 'Old QR alarm',
+        qrValue: 'OLD-PRINTED-CODE', escapes: const {EscapeKind.qr}),
+    ))));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.widgetWithText(TextField, 'QR code secret'));
+    expect(field.controller!.text, 'OLD-PRINTED-CODE');
+    await tester.ensureVisible(find.text('Use shared wake-up QR'));
+    await tester.tap(find.text('Use shared wake-up QR'));
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, 'SHARED-WAKE-UP');
+  });
+
   testWidgets('saving returns an alarm carrying the chosen sound pack',
       (tester) async {
     // The editor is a scrollable sheet taller than the 800x600 test surface, so

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/alarm.dart';
+import '../core/wake_up_qr.dart';
 import '../platform/alarm_engine.dart';
 
 class AlarmEditor extends StatefulWidget {
@@ -20,6 +20,7 @@ class AlarmEditor extends StatefulWidget {
     this.defaultSnoozeMinutes,
     this.canCheckIn = true,
     this.canPractice = true,
+    this.sharedQrValue,
   });
 
   final Alarm? existing;
@@ -32,6 +33,7 @@ class AlarmEditor extends StatefulWidget {
   final int? defaultSnoozeMinutes;
   final bool canCheckIn;
   final bool canPractice;
+  final String? sharedQrValue;
 
   @override
   State<AlarmEditor> createState() => _AlarmEditorState();
@@ -54,7 +56,6 @@ class _AlarmEditorState extends State<AlarmEditor> {
   String? _validationError;
   int? _previewing;
 
-  final _rng = Random.secure();
 
   static const _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -148,7 +149,7 @@ class _AlarmEditorState extends State<AlarmEditor> {
             Text('Wake escapes', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              'Which ways out this alarm offers when it rings. The two-minute '
+              'Which ways out this alarm offers when it rings. The one-minute '
               'hold is always available, so no combination can leave you '
               'stuck.',
               style: Theme.of(context).textTheme.bodySmall,
@@ -168,7 +169,7 @@ class _AlarmEditorState extends State<AlarmEditor> {
                         // button on the ringing screen pointing at nothing,
                         // so the code exists before the chip lands.
                         if (escape == EscapeKind.qr && _qr.text.trim().isEmpty) {
-                          _qr.text = _newSecret();
+                          _qr.text = widget.sharedQrValue ?? _newSecret();
                         }
                       } else {
                         _escapes.remove(escape);
@@ -200,11 +201,12 @@ class _AlarmEditorState extends State<AlarmEditor> {
                   helperText: _qr.text.isEmpty
                       ? 'Generate one, then print or show it away from the '
                           'bed so getting up is unavoidable.'
-                      : 'Print or show this QR code, then scan it to end the '
-                          'alarm.',
+                       : _qr.text.trim() == widget.sharedQrValue
+                           ? 'Your shared wake-up QR. Print once for all alarms using it.'
+                           : 'Custom code for this alarm. Existing printed codes still work.',
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.qr_code_2_outlined),
-                    tooltip: 'Generate a QR secret',
+                    tooltip: 'Generate a custom code for this alarm',
                     onPressed: _generateQrSecret,
                   ),
                 ),
@@ -217,9 +219,18 @@ class _AlarmEditorState extends State<AlarmEditor> {
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
                     icon: const Icon(Icons.qr_code_scanner_outlined),
-                    label: const Text('Show QR code'),
+                    label: Text(_qr.text.trim() == widget.sharedQrValue ? 'Show wake-up QR' : 'Show QR code'),
                     onPressed: () => _showQrSheet(context, _qr.text.trim()),
                   ),
+                ),
+              if (widget.sharedQrValue != null && _qr.text.trim() != widget.sharedQrValue)
+                TextButton.icon(
+                  icon: const Icon(Icons.link),
+                  label: const Text('Use shared wake-up QR'),
+                  onPressed: () => setState(() {
+                    _qr.text = widget.sharedQrValue!;
+                    _validationError = null;
+                  }),
                 ),
             ],
             const SizedBox(height: 16),
@@ -374,7 +385,7 @@ class _AlarmEditorState extends State<AlarmEditor> {
     };
     _snoozeMinutes = index == 0 ? 9 : 0;
     _checkInMinutes = index == 2 && widget.canCheckIn ? 5 : 0;
-    if (index == 2 && _qr.text.trim().isEmpty) _qr.text = _newSecret();
+    if (index == 2 && _qr.text.trim().isEmpty) _qr.text = widget.sharedQrValue ?? _newSecret();
     _validationError = null;
   });
 
@@ -392,13 +403,7 @@ class _AlarmEditorState extends State<AlarmEditor> {
   /// The secret itself, without touching the tree: `initState` writes it
   /// straight into the controller, where a rebuild would be pointless.
   String _newSecret() {
-    // No I, O, 0 or 1: every symbol has to be re-readable off a printed card.
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final letters = List.generate(16, (_) => alphabet[_rng.nextInt(alphabet.length)]).join();
-    // A short numeric tail, because some people will read it aloud instead of
-    // scanning, and digits are easier to say correctly than letters.
-    final digits = List.generate(4, (_) => _rng.nextInt(10)).join();
-    return '$letters-$digits';
+    return generateQrSecret();
   }
 
   /// Silences any running preview before closing, so the sample never keeps

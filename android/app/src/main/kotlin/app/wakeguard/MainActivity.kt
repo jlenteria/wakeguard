@@ -58,6 +58,10 @@ class MainActivity : FlutterActivity() {
             )
             val triggerAt = (call.argument<Number>("triggerAtMillis"))?.toLong()
                 ?: NativeAlarmScheduler.nextTrigger(alarm.hour, alarm.minute, alarm.weekdays)
+            check((AlarmDefaults.ESCAPE_FACE !in alarm.escapes && AlarmDefaults.ESCAPE_QR !in alarm.escapes) ||
+                HealthChecker.hasCameraPermission(this)) {
+                "Enable camera permission in Health before saving a Face/QR alarm"
+            }
             NativeAlarmScheduler.schedule(this, alarm, triggerAt)
             null
         }

@@ -52,7 +52,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  1. Face actions (camera) - the "you are actually awake" check.
  *  2. A remembered pattern sequence - no camera, no light, fully accessible.
  *  3. A QR code away from bed - the physical nudge.
- *  4. A deliberate two minute hold - always available, never conditional.
+ *  4. A deliberate one minute hold - always available, never conditional.
  *
  * The invariant is that no single failing subsystem can trap the user. If the
  * camera is broken, denied, or facing a dark room, escapes 2 and 4 still work.
@@ -125,7 +125,7 @@ class AlarmRingActivity : AppCompatActivity() {
 
     private companion object {
         const val ANALYSIS_INTERVAL_MS = 120L
-        const val ESCAPE_HOLD_MS = 2 * 60_000L
+        const val ESCAPE_HOLD_MS = 60_000L
         const val BLINK_EYE_THRESHOLD = 0.28f
         const val OPEN_EYE_THRESHOLD = 0.72f
         const val SMILE_THRESHOLD = 0.72f

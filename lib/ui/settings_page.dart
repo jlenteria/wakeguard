@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/alarm_controller.dart';
 import '../core/settings.dart';
+import '../core/wake_up_qr.dart';
+import 'alarm_editor.dart' show QrSheet;
 
 /// App-wide preferences plus the wake-up record.
 ///
@@ -63,6 +65,30 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           const Divider(height: 32),
+          _Section(
+            title: 'Wake-up QR',
+            subtitle: 'Print once and place it away from bed. New QR alarms reuse '
+                'this code. Existing custom codes stay unchanged.',
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('Show wake-up QR'),
+              onPressed: () async {
+                try {
+                  final codes = controller.alarms.map((a) => a.qrValue.trim()).where((code) => code.isNotEmpty);
+                  final value = await WakeUpQrRepository().getOrCreate(
+                      preferredValue: codes.isEmpty ? null : codes.first);
+                  if (!context.mounted) return;
+                  await showModalBottomSheet<void>(
+                    context: context, showDragHandle: true, isScrollControlled: true,
+                    builder: (_) => QrSheet(value: value),
+                  );
+                } catch (error) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Could not load wake-up QR: $error')));
+                }
+              },
+            ),
+          ),
           _Section(
             title: 'Wake-ups',
             child: Column(

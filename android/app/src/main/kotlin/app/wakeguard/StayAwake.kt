@@ -7,12 +7,16 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 
 /** Native check-ins: no Flutter isolate or long-running timer is required. */
 object StayAwake {
     const val GRACE_MS = 60_000L
-    private const val CHANNEL = "wakeguard.checkin"
+    // Channel sound settings cannot be changed after creation. A new ID applies
+    // the audible default to installations that already created the old channel.
+    private const val CHANNEL = "wakeguard.checkin.audible.v2"
 
     private fun operation(context: Context, session: AlarmSession, stage: String): PendingIntent =
         PendingIntent.getBroadcast(context, 0, Intent(context, CheckInReceiver::class.java).apply {
@@ -45,12 +49,22 @@ object StayAwake {
 
     fun prompt(context: Context, session: AlarmSession) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Stay Awake check-ins", NotificationManager.IMPORTANCE_HIGH))
+        val sound = Settings.System.DEFAULT_NOTIFICATION_URI
+        val channel = NotificationChannel(CHANNEL, "Stay Awake check-ins", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "A short sound reminds you to confirm you are still awake."
+            setSound(sound, AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build())
+        }
+        manager.createNotificationChannel(channel)
         manager.notify(session.alarm.notificationId xor 0x40000000,
             NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_wakeguard_alarm).setContentTitle("Still up?")
                 .setContentText("${session.alarm.label}: confirm within 1 minute. Otherwise one follow-up alarm will ring.")
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(false).setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setSound(sound).setOnlyAlertOnce(true)
                 .setContentIntent(operation(context, session, "confirm"))
                 .addAction(0, "I'm up", operation(context, session, "confirm")).build())
     }

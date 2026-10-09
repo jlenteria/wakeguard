@@ -31,12 +31,16 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
 
 - **Simple / Challenge / Get out of bed presets:** tap to stop, a camera-free
   memory pattern, or a QR code placed away from bed. Face actions are also
-  available. The two-minute hold always remains an escape.
+  available. The one-minute hold always remains an escape.
 - **Stay Awake:** opt into a check-in 3, 5 or 10 minutes after dismissal. Confirm
-  with “I'm up” during the one-minute grace period; an unanswered check-in
+  when a short notification sound prompts you, using “I'm up” during the
+  one-minute grace period; an unanswered check-in
   produces at most one follow-up alarm, with no snooze or further check-ins.
 - **Practice:** use the real native challenge without scheduling, playing alarm
   audio, adding history or changing the next alarm. Back/Exit leaves practice.
+- **One wake-up QR:** print once and reuse it for new QR alarms. Show or export
+  it from Settings; existing per-alarm codes remain valid, and custom codes are
+  still available in the editor.
 - **Flexible mornings:** daily, selected days or one-time alarms; per-alarm
   snooze; skip the next repeat and resume automatically; duplicate switched off.
 - **History:** started, snoozed, dismissed, missed and check-in outcomes with
@@ -44,7 +48,8 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
   unscheduled weekdays for the current repeating schedule. History is bounded
   and can be deleted from the History tab.
 - **Readiness:** blocking exact-alarm, notification and alarm-volume checks;
-  camera/full-screen guidance; sound previews; next-date/time save feedback.
+  camera permission required to save or enable Face/QR alarms; full-screen
+  guidance; sound previews; next-date/time save feedback.
 - **Privacy:** no account, ads or analytics; local processing and explicit
   Android backup/transfer exclusions. Uninstalling deletes local records.
 
@@ -63,7 +68,7 @@ Android delivery and recovery use three complementary mechanisms:
 The wake challenge (`AlarmRingActivity`) is deliberately a plain Android
 Activity, never a Flutter route: dismissing an alarm must not depend on the
 Dart isolate booting. Each alarm carries the escapes it offers — face actions,
-tap to stop, pattern, QR — and any one of them works, plus a two-minute hold that is always
+tap to stop, pattern, QR — and any one of them works, plus a one-minute hold that is always
 available regardless of configuration.
 
 ## Layout
@@ -112,8 +117,9 @@ Current Android configuration:
 - `android.hardware.camera.front` declared `required="false"` so camera-less
   devices are not filtered out.
 - Blocking vs. warning severities: only exact alarms, alarm volume and
-  notification permission block a save; full-screen intent and camera are
-  warnings.
+  notification permission are globally blocking. Camera permission additionally
+  blocks Face/QR saves and enables; Pattern/Tap need no camera. Full-screen
+  intent is advisory.
 
 Before a public release:
 
