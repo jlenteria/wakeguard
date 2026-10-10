@@ -4,9 +4,9 @@
     android:viewportWidth="108" android:viewportHeight="108">
     <group android:scaleX="0.84" android:scaleY="0.84" android:pivotX="54" android:pivotY="54">
         <path android:pathData="M35,76 L30,83 M73,76 L78,83" android:strokeColor="#FFFFFF" android:strokeWidth="6" android:strokeLineCap="round"/>
-        <path android:pathData="M29,33 L38,26 M70,26 L79,33" android:strokeColor="#FFFFFF" android:strokeWidth="9" android:strokeLineCap="round"/>
+        <path android:pathData="M30,32 L38,26 M70,26 L78,32" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"/>
         <path android:pathData="M50,22 L58,22" android:strokeColor="#FFFFFF" android:strokeWidth="4" android:strokeLineCap="round"/>
         <path android:pathData="M54,29 A26,26 0,1 1,54,81 A26,26 0,1 1,54,29" android:strokeColor="#FFFFFF" android:strokeWidth="6"/>
-        <path android:pathData="M42,54 L51,63 L66,47" android:strokeColor="#FFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+        <path android:pathData="M43,54 L51,62 L65,48" android:strokeColor="#FFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:strokeLineJoin="round"/>
     </group>
 </vector>

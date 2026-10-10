@@ -3,10 +3,9 @@
   <rect width="108" height="108" rx="24" fill="#141C2B"/>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M35 76L30 83M73 76L78 83" stroke="#EF5B2A" stroke-width="6"/>
-    <path d="M29 33L38 26M70 26L79 33" stroke="#EF5B2A" stroke-width="9"/>
+    <path d="M30 32L38 26M70 26L78 32" stroke="#EF5B2A" stroke-width="7"/>
     <path d="M50 22H58" stroke="#FFF4E9" stroke-width="4"/>
     <circle cx="54" cy="55" r="26" stroke="#EF5B2A" stroke-width="6"/>
-    <path d="M54 36V39M35 55H38M70 55H73M54 71V74" stroke="#FFB28E" stroke-width="2.5"/>
-    <path d="M42 54L51 63L66 47" stroke="#FFF4E9" stroke-width="6"/>
+    <path d="M43 54L51 62L65 48" stroke="#FFF4E9" stroke-width="6"/>
   </g>
 </svg>
