@@ -192,7 +192,10 @@ class ShellScreen extends StatelessWidget {
     await controller.upsert(draft);
     if (!context.mounted) return;
     final error = controller.lastError;
-    if (error == null) viewModel.setPendingCameraDraft(null);
+    if (error == null) {
+      viewModel.setPendingCameraDraft(null);
+      viewModel.selectTab(0);
+    }
     final at = controller.nextFireTime(draft.id);
     final message = error ??
         (!draft.enabled
