@@ -26,8 +26,9 @@ object HealthChecker {
         "canLoopWhileBackgrounded" to true,
         "canLockScreenTakeover" to true,
         "canUseCameraInBackground" to true,
-        // No ACCESS_NOTIFICATION_POLICY: alarm audio runs on STREAM_ALARM, which DND does not silence.
-        "canBypassSilentSwitch" to false,
+        // STREAM_ALARM is independent of silent/vibrate mode. DND can still block alarms
+        // if the user disables them in its settings; this is not a DND-bypass capability.
+        "canBypassSilentSwitch" to true,
         // Android has no equivalent to iOS's 64-pending-notification cap.
         "pendingSlotCap" to null,
     )
@@ -100,17 +101,6 @@ object HealthChecker {
             ),
         )
 
-        // Always advisory: the vendor screen has no public deep link.
-        add(
-            mapOf(
-                "id" to "autostart",
-                "label" to "Vendor auto-start",
-                "detail" to "Xiaomi, Oppo, Vivo and Huawei kill background apps " +
-                    "by default. Check the auto-start list for WakeGuard.",
-                "severity" to "warning",
-                "action" to "autostart",
-            ),
-        )
     }
 
     /** Severities mirror the Dart `HealthSeverity` enum; keep the names in step. */
@@ -214,7 +204,7 @@ object HealthChecker {
 
             "alarm_volume" -> Intent(Settings.ACTION_SOUND_SETTINGS)
 
-            "camera", "autostart" ->
+            "camera" ->
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:${context.packageName}")
                 }

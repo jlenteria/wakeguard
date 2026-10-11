@@ -15,79 +15,79 @@ class OnboardingScreen extends StatelessWidget {
     final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('WakeGuard', style: theme.textTheme.headlineMedium),
-              const SizedBox(height: 8),
-              Text(
-                'Wake up, complete a challenge, and check you’re still up. '
-                'Private, offline and free. Let’s get your first alarm ready.',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              Expanded(
-                child: ListView(
-                  children: [
-                    _Step(
-                      icon: Icons.notifications_outlined,
-                      title: 'Allow notifications',
-                      body: 'Without them the alarm rings with nothing on '
-                          'screen and the wake challenge cannot appear over '
-                          'the lock screen.',
-                      button: FilledButton.tonal(
-                        onPressed: viewModel.requestingNotifications
-                            ? null
-                            : () => _requestNotifications(context),
-                        child: Text(viewModel.requestingNotifications ? 'Opening…' : 'Allow'),
-                      ),
-                    ),
-                    if (viewModel.hasChecks)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(viewModel.ready
-                            ? 'Alarm settings are ready.'
-                            : viewModel.pendingSummary),
-                      ),
-                    if (viewModel.lastError != null) Text(viewModel.lastError!),
-                    _Step(
-                      icon: Icons.volume_up_outlined,
-                      title: 'Check the alarm volume',
-                      body: 'A muted alarm stream is silent no matter how '
-                          'reliable the scheduling is. This plays the real '
-                          'tone for ten seconds.',
-                      button: FilledButton.tonal(
-                        onPressed: viewModel.runPreflight,
-                        child: const Text('Test the sound'),
-                      ),
-                    ),
-                    _Step(
-                      icon: Icons.health_and_safety_outlined,
-                      title: 'Exact alarms',
-                      body: 'Android may delay an alarm by minutes unless it '
-                          'is allowed to fire exactly. The Health tab shows '
-                          'this and the rest.',
-                      button: FilledButton.tonal(
-                        onPressed: () => viewModel.allowExactAlarms(),
-                        child: const Text('Allow exact alarms'),
-                      ),
-                    ),
-                  ],
+          children: [
+            Text('WakeGuard', style: theme.textTheme.headlineMedium),
+            const SizedBox(height: 8),
+            Text(
+              'Wake up, complete a challenge, and check you’re still up. '
+              'Private, offline and free. Let’s get your first alarm ready.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            _Step(
+              icon: Icons.notifications_outlined,
+              title: 'Allow notifications',
+              body:
+                  'Allow WakeGuard to show alarm notifications. '
+                  'Sound and lock-screen behavior depend on your phone settings.',
+              button: FilledButton.tonal(
+                onPressed: viewModel.requestingNotifications
+                    ? null
+                    : () => _requestNotifications(context),
+                child: Text(
+                  viewModel.requestingNotifications ? 'Opening…' : 'Allow',
                 ),
               ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: viewModel.finish,
-                child: const Text('Get started'),
+            ),
+            if (viewModel.hasChecks)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  viewModel.ready
+                      ? 'Alarm settings are ready.'
+                      : viewModel.pendingSummary,
+                ),
               ),
-              TextButton(
-                onPressed: viewModel.finish,
-                child: const Text('Skip for now'),
+            if (viewModel.lastError != null) Text(viewModel.lastError!),
+            _Step(
+              icon: Icons.volume_up_outlined,
+              title: 'Check the alarm volume',
+              body:
+                  'A muted alarm stream is silent no matter how '
+                  'reliable the scheduling is. This plays the real '
+                  'tone for ten seconds.',
+              button: FilledButton.tonal(
+                onPressed: viewModel.playing
+                    ? viewModel.stopTest
+                    : viewModel.runPreflight,
+                child: Text(viewModel.playing ? 'Stop test' : 'Test the sound'),
               ),
-            ],
-          ),
+            ),
+            if (viewModel.hasExactAlarmCheck)
+              _Step(
+                icon: Icons.health_and_safety_outlined,
+                title: 'Exact alarms',
+                body:
+                    'Android may delay an alarm by minutes unless it '
+                    'is allowed to fire exactly. The Health tab shows '
+                    'this and the rest.',
+                button: FilledButton.tonal(
+                  onPressed: () => _allowExactAlarms(context),
+                  child: const Text('Allow exact alarms'),
+                ),
+              ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: viewModel.finishing ? null : () => _finish(context),
+              child: Text(viewModel.finishing ? 'Opening…' : 'Get started'),
+            ),
+            TextButton(
+              onPressed: viewModel.finishing ? null : () => _finish(context),
+              child: const Text('Skip for now'),
+            ),
+          ],
         ),
       ),
     );
@@ -96,8 +96,36 @@ class OnboardingScreen extends StatelessWidget {
   Future<void> _requestNotifications(BuildContext context) async {
     final failure = await viewModel.requestNotifications();
     if (failure == null || !context.mounted) return;
-    showAppToast(context,
-        kind: ToastKind.error, message: 'Could not request notifications', detail: failure);
+    showAppToast(
+      context,
+      kind: ToastKind.error,
+      message: 'Could not request notifications',
+      detail: failure,
+    );
+  }
+
+  Future<void> _allowExactAlarms(BuildContext context) async {
+    final failure = await viewModel.allowExactAlarms();
+    if (failure != null && context.mounted) {
+      showAppToast(
+        context,
+        kind: ToastKind.error,
+        message: 'Could not open alarm settings',
+        detail: failure,
+      );
+    }
+  }
+
+  Future<void> _finish(BuildContext context) async {
+    final failure = await viewModel.finish();
+    if (failure != null && context.mounted) {
+      showAppToast(
+        context,
+        kind: ToastKind.error,
+        message: 'Could not complete setup',
+        detail: failure,
+      );
+    }
   }
 }
 
@@ -131,10 +159,7 @@ class _Step extends StatelessWidget {
                 Text(title, style: theme.textTheme.titleSmall),
                 const SizedBox(height: 4),
                 Text(body, style: theme.textTheme.bodySmall),
-                if (button != null) ...[
-                  const SizedBox(height: 8),
-                  button!,
-                ],
+                if (button != null) ...[const SizedBox(height: 8), button!],
               ],
             ),
           ),

@@ -38,53 +38,94 @@ class AlarmsScreen extends StatelessWidget {
               onDismiss: viewModel.clearError,
             ),
           Expanded(
-            child: viewModel.isEmpty
-                ? Column(children: [
-                    _ReadinessCard(viewModel: viewModel, onOpenHealth: onOpenHealth),
-                    const Expanded(child: _EmptyState()),
-                  ])
-                : ListView.builder(
-                    itemCount: viewModel.alarms.length + 2,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return Column(children: [
-                          _ReadinessCard(viewModel: viewModel, onOpenHealth: onOpenHealth),
-                          if (dropped.isNotEmpty) _SlotWarning(count: dropped.length),
-                          if (soonest != null) _NextAlarmBanner(triggerAt: soonest),
-                        ]);
+            child: RefreshIndicator(
+              onRefresh: () => _refresh(context),
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: viewModel.alarms.length + 2,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Column(
+                      children: [
+                        _ReadinessCard(
+                          viewModel: viewModel,
+                          onOpenHealth: onOpenHealth,
+                        ),
+                        if (dropped.isNotEmpty)
+                          _SlotWarning(count: dropped.length),
+                        if (soonest != null)
+                          _NextAlarmBanner(
+                            triggerAt: soonest,
+                            alarm: viewModel.nextAlarm,
+                          ),
+                        if (viewModel.isEmpty)
+                          const _EmptyState()
+                        else if (soonest == null)
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              viewModel.hasEnabledAlarms
+                                  ? 'No upcoming alarm scheduled. Check Health for details.'
+                                  : 'No alarms enabled. Switch one on to schedule your next wake-up.',
+                            ),
+                          ),
+                      ],
+                    );
+                  }
+                  if (index == viewModel.alarms.length + 1) {
+                    return const SizedBox(height: 96);
+                  }
+                  final alarm = viewModel.alarms[index - 1];
+                  return _AlarmTile(
+                    alarm: alarm,
+                    busy: viewModel.isBusy(alarm.id),
+                    plannedAt: viewModel.fireTime(alarm.id),
+                    onOpen: onOpen,
+                    onToggle: (value) async {
+                      try {
+                        final cameraMissing = await viewModel.toggle(
+                          alarm,
+                          value,
+                        );
+                        if (cameraMissing) onOpenHealth?.call();
+                      } catch (error) {
+                        if (context.mounted) {
+                          showAppToast(
+                            context,
+                            kind: ToastKind.error,
+                            message: 'Could not update alarm',
+                            detail: '$error',
+                          );
+                        }
                       }
-                      if (index == viewModel.alarms.length + 1) {
-                        return const SizedBox(height: 96);
-                      }
-                      final alarm = viewModel.alarms[index - 1];
-                      return _AlarmTile(
-                        alarm: alarm,
-                        plannedAt: viewModel.fireTime(alarm.id),
-                        onOpen: onOpen,
-                        onToggle: (value) async {
-                          try {
-                            final cameraMissing = await viewModel.toggle(alarm, value);
-                            if (cameraMissing) onOpenHealth?.call();
-                          } catch (error) {
-                            if (context.mounted) {
-                              showAppToast(context,
-                                  kind: ToastKind.error,
-                                  message: 'Could not update alarm',
-                                  detail: '$error');
-                            }
-                          }
-                        },
-                        onDelete: () => viewModel.delete(alarm),
-                        onRestore: () => viewModel.restore(alarm),
-                        onDuplicate: () => viewModel.duplicate(alarm),
-                        onSkip: () => viewModel.toggleSkip(alarm),
-                      );
                     },
-                  ),
+                    onDelete: () => viewModel.delete(alarm),
+                    onRestore: () => viewModel.restore(alarm),
+                    onDuplicate: () => viewModel.duplicate(alarm),
+                    onSkip: () => viewModel.toggleSkip(alarm),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _refresh(BuildContext context) async {
+    try {
+      await viewModel.refresh();
+    } catch (error) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          kind: ToastKind.error,
+          message: 'Could not refresh alarms',
+          detail: '$error',
+        );
+      }
+    }
   }
 }
 
@@ -97,18 +138,32 @@ class _ReadinessCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocking = viewModel.unresolvedChecks;
+    final warnings = viewModel.warnings;
+    final ready =
+        blocking.isEmpty && warnings.isEmpty && viewModel.readinessKnown;
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: ListTile(
-        leading: Icon(blocking.isEmpty ? Icons.check_circle_outline : Icons.error_outline),
-        title: Text(viewModel.checks.isEmpty
-            ? 'Checking readiness…'
-            : blocking.isEmpty
-                ? 'Alarm settings ready'
-                : 'Your alarm needs attention'),
-        subtitle: Text(blocking.isEmpty
-            ? 'Practise your challenge and test the sound before your first morning.'
-            : blocking.map((c) => c.label).join(', ')),
+        leading: Icon(
+          ready ? Icons.check_circle_outline : Icons.error_outline,
+          color: blocking.isNotEmpty ? scheme.error : scheme.primary,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        title: Text(
+          !viewModel.readinessKnown
+              ? 'Readiness unavailable'
+              : ready
+              ? 'Alarm settings ready'
+              : 'Your alarm needs attention',
+        ),
+        subtitle: Text(
+          !viewModel.readinessKnown
+              ? 'Open Health to check your settings.'
+              : ready
+              ? 'Practice your challenge and test the sound before your first morning.'
+              : [...blocking, ...warnings].map((c) => c.label).join(', '),
+        ),
         onTap: onOpenHealth,
       ),
     );
@@ -116,9 +171,10 @@ class _ReadinessCard extends StatelessWidget {
 }
 
 class _NextAlarmBanner extends StatelessWidget {
-  const _NextAlarmBanner({required this.triggerAt});
+  const _NextAlarmBanner({required this.triggerAt, this.alarm});
 
   final DateTime triggerAt;
+  final Alarm? alarm;
 
   @override
   Widget build(BuildContext context) {
@@ -126,16 +182,34 @@ class _NextAlarmBanner extends StatelessWidget {
     final label = delta.isNegative || delta.inMinutes < 1
         ? 'rings now'
         : delta.inHours >= 24
-            ? 'rings in ${delta.inDays}d ${delta.inHours % 24}h'
-            : 'rings in ${delta.inHours}h ${delta.inMinutes % 60}m';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Row(
-        children: [
-          const Icon(Icons.schedule, size: 16),
-          const SizedBox(width: 8),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
+        ? 'rings in ${delta.inDays}d ${delta.inHours % 24}h'
+        : 'rings in ${delta.inHours}h ${delta.inMinutes % 60}m';
+    final localizations = MaterialLocalizations.of(context);
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Next alarm', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Text(
+                TimeOfDay.fromDateTime(triggerAt).format(context),
+                style: Theme.of(context).textTheme.headlineLarge,
+              ),
+              Text(
+                '${alarm?.label.isNotEmpty == true ? alarm!.label : 'Alarm'} · '
+                '${localizations.formatFullDate(triggerAt)}',
+              ),
+              const SizedBox(height: 8),
+              Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -154,7 +228,10 @@ class _ErrorBar extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.error_outline),
         title: Text(message, style: const TextStyle(fontSize: 13)),
-        trailing: IconButton(icon: const Icon(Icons.close), onPressed: onDismiss),
+        trailing: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: onDismiss,
+        ),
       ),
     );
   }
@@ -198,6 +275,7 @@ class _AlarmTile extends StatelessWidget {
     required this.onDuplicate,
     required this.onSkip,
     this.plannedAt,
+    required this.busy,
   });
 
   final Alarm alarm;
@@ -208,6 +286,7 @@ class _AlarmTile extends StatelessWidget {
   final Future<void> Function() onDuplicate;
   final Future<void> Function() onSkip;
   final DateTime? plannedAt;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +296,7 @@ class _AlarmTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Dismissible(
       key: ValueKey(alarm.id),
-      direction: DismissDirection.endToStart,
+      direction: busy ? DismissDirection.none : DismissDirection.endToStart,
       confirmDismiss: (_) async {
         final deleted = await onDelete();
         if (!deleted) return false;
@@ -228,12 +307,19 @@ class _AlarmTile extends StatelessWidget {
           scheme,
           kind: ToastKind.success,
           message: 'Deleted the $timeLabel alarm',
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 10),
           actionLabel: 'Undo',
-          onAction: () => unawaited(onRestore().catchError((Object error) {
-            showToastTo(messenger, scheme,
-                kind: ToastKind.error, message: 'Could not restore alarm', detail: '$error');
-          })),
+          onAction: () => unawaited(
+            onRestore().catchError((Object error) {
+              showToastTo(
+                messenger,
+                scheme,
+                kind: ToastKind.error,
+                message: 'Could not restore alarm',
+                detail: '$error',
+              );
+            }),
+          ),
         );
         return true;
       },
@@ -247,51 +333,103 @@ class _AlarmTile extends StatelessWidget {
       child: Opacity(
         opacity: alarm.enabled ? 1 : 0.55,
         child: ListTile(
-          onTap: () => onOpen(alarm),
-          title: Text(time.format(context), style: const TextStyle(fontSize: 32)),
-          subtitle: Text([
-            '${alarm.label} · ${_repeatSummary(alarm)}',
-            if (plannedAt != null) 'rings ${_relative(plannedAt!)}',
-            '${alarm.difficulty.label} challenge · ${_escapeSummary(alarm)}'
+          onTap: busy ? null : () => onOpen(alarm),
+          title: Text(
+            time.format(context),
+            style: const TextStyle(fontSize: 32),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${alarm.label.isEmpty ? 'Alarm' : alarm.label} · ${_repeatSummary(alarm)}',
+              ),
+              Text(
+                !alarm.enabled
+                    ? 'Off'
+                    : plannedAt != null
+                    ? 'Rings ${_relative(plannedAt!)}'
+                    : 'Not scheduled',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${alarm.difficulty.label} · ${_escapeSummary(alarm)}'
                 '${alarm.snoozeMinutes == 0 ? ' · no snooze' : ''}',
-            if (alarm.checkInMinutes > 0) 'Stay Awake check-in · ${alarm.checkInMinutes} min',
-            if (alarm.skipUntilMillis > DateTime.now().millisecondsSinceEpoch) 'Next occurrence skipped',
-          ].join('\n')),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            Switch(value: alarm.enabled, onChanged: (value) => onToggle(value)),
-            PopupMenuButton<String>(
-              tooltip: 'Alarm actions',
-              onSelected: (action) async {
-                try {
-                  if (action == 'duplicate') await onDuplicate();
-                  if (action == 'skip') await onSkip();
-                  if (!context.mounted) return;
-                  showAppToast(
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (alarm.checkInMinutes > 0)
+                Text(
+                  'Stay Awake · ${alarm.checkInMinutes} min',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              if (alarm.skipUntilMillis > DateTime.now().millisecondsSinceEpoch)
+                Text(
+                  'Next occurrence skipped',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (busy)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              Switch(
+                value: alarm.enabled,
+                onChanged: busy ? null : (value) => onToggle(value),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Alarm actions',
+                enabled: !busy,
+                onSelected: (action) async {
+                  try {
+                    if (action == 'duplicate') await onDuplicate();
+                    if (action == 'skip') await onSkip();
+                    if (!context.mounted) return;
+                    showAppToast(
                       context,
                       kind: ToastKind.success,
                       message: action == 'duplicate'
                           ? 'Alarm duplicated, switched off.'
                           : 'Schedule updated.',
-                      detail: action == 'duplicate' ? 'Edit it to choose a time.' : null);
-                } catch (error) {
-                  if (context.mounted) {
-                    showAppToast(context,
-                        kind: ToastKind.error, message: 'Could not update alarm', detail: '$error');
+                      detail: action == 'duplicate'
+                          ? 'Edit it to choose a time.'
+                          : null,
+                    );
+                  } catch (error) {
+                    if (context.mounted) {
+                      showAppToast(
+                        context,
+                        kind: ToastKind.error,
+                        message: 'Could not update alarm',
+                        detail: '$error',
+                      );
+                    }
                   }
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-                if (alarm.enabled && alarm.isRepeating)
-                  PopupMenuItem(
-                    value: 'skip',
-                    child: Text(alarm.skipUntilMillis > DateTime.now().millisecondsSinceEpoch
-                        ? 'Restore skipped occurrence'
-                        : 'Skip next occurrence'),
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Text('Duplicate'),
                   ),
-              ],
-            ),
-          ]),
+                  if (alarm.enabled && alarm.isRepeating)
+                    PopupMenuItem(
+                      value: 'skip',
+                      child: Text(
+                        alarm.skipUntilMillis >
+                                DateTime.now().millisecondsSinceEpoch
+                            ? 'Restore skipped occurrence'
+                            : 'Skip next occurrence',
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -316,7 +454,9 @@ class _AlarmTile extends StatelessWidget {
     final delta = when.difference(DateTime.now());
     if (delta.isNegative || delta.inMinutes < 1) return 'now';
     if (delta.inMinutes < 60) return 'in ${delta.inMinutes}m';
-    if (delta.inHours < 24) return 'in ${delta.inHours}h ${delta.inMinutes % 60}m';
+    if (delta.inHours < 24) {
+      return 'in ${delta.inHours}h ${delta.inMinutes % 60}m';
+    }
     return 'in ${delta.inDays}d';
   }
 }
@@ -336,7 +476,7 @@ class _EmptyState extends StatelessWidget {
             SizedBox(height: 16),
             Text(
               'Make tomorrow morning easier.\nAdd an alarm, choose a preset, '
-              'and practise your challenge.',
+              'and practice your challenge.',
               textAlign: TextAlign.center,
             ),
           ],

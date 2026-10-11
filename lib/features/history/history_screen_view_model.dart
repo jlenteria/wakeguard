@@ -10,7 +10,12 @@ class HistoryScreenViewModel extends ViewModel {
 
   final AlarmController controller;
 
-  List<Map<String, Object?>> get entries => controller.history;
+  List<Map<String, Object?>> get entries => List.of(controller.history)
+    ..sort(
+      (a, b) => ((b['at'] as num?)?.toInt() ?? 0).compareTo(
+        (a['at'] as num?)?.toInt() ?? 0,
+      ),
+    );
   WakeUpStats get stats => controller.wakeUpStats;
 
   int get _weekCutoff =>
@@ -30,8 +35,49 @@ class HistoryScreenViewModel extends ViewModel {
 
   int get missed => _week.where((e) => e['event'] == 'missed').length;
 
-  Future<void> refresh() => controller.refreshHealth();
+  bool _refreshing = false;
+  bool get refreshing => _refreshing;
+  Future<void> refresh() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    safeNotify();
+    try {
+      await controller.refreshHistory();
+    } finally {
+      _refreshing = false;
+      safeNotify();
+    }
+  }
+
   Future<void> clearHistory() => controller.clearHistory();
+
+  List<HistoryDay> get days {
+    final groups = <DateTime?, List<Map<String, Object?>>>{};
+    for (final entry in entries) {
+      final at = entry['at'];
+      final date = at is num
+          ? DateTime.fromMillisecondsSinceEpoch(at.toInt())
+          : null;
+      final day = date == null
+          ? null
+          : DateTime(date.year, date.month, date.day);
+      groups.putIfAbsent(day, () => []).add(entry);
+    }
+    return [
+      for (final group in groups.entries) HistoryDay(group.key, group.value),
+    ];
+  }
+
+  static String methodLabel(String method) => switch (method) {
+    'face' => 'Face challenge',
+    'tap' => 'Tap to stop',
+    'checkin' => 'Check-in confirmed',
+    'qr' => 'QR challenge',
+    'pattern' => 'Pattern challenge',
+    'hold' => 'Hold to stop',
+    'settings' => 'Stopped from settings',
+    _ => 'Dismissal',
+  };
 
   static String eventLabel(String event) => switch (event) {
     'started' => 'Rang',
@@ -51,4 +97,10 @@ class HistoryScreenViewModel extends ViewModel {
     controller.removeListener(safeNotify);
     super.dispose();
   }
+}
+
+class HistoryDay {
+  const HistoryDay(this.date, this.entries);
+  final DateTime? date;
+  final List<Map<String, Object?>> entries;
 }

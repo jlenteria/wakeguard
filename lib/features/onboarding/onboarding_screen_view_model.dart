@@ -11,6 +11,11 @@ class OnboardingScreenViewModel extends ViewModel {
   final Future<void> Function() onDone;
 
   bool _requestingNotifications = false;
+  bool _finishing = false;
+  bool get finishing => _finishing;
+  bool get playing => controller.audibilityTestPlaying;
+  bool get hasExactAlarmCheck =>
+      controller.checks.any((c) => c.id == 'exact_alarm');
 
   bool get requestingNotifications => _requestingNotifications;
   bool get hasChecks => controller.checks.isNotEmpty;
@@ -20,6 +25,7 @@ class OnboardingScreenViewModel extends ViewModel {
       'Still needed: ${controller.unresolvedChecks.map((c) => c.label).join(', ')}';
 
   Future<String?> requestNotifications() async {
+    if (_requestingNotifications) return null;
     _requestingNotifications = true;
     safeNotify();
     try {
@@ -35,8 +41,29 @@ class OnboardingScreenViewModel extends ViewModel {
   }
 
   Future<void> runPreflight() => controller.runPreflight();
-  Future<String?> allowExactAlarms() => controller.openFix('exact_alarm');
-  Future<void> finish() => onDone();
+  Future<void> stopTest() => controller.stopAudibilitySample();
+  Future<String?> allowExactAlarms() async {
+    try {
+      return await controller.openFix('exact_alarm');
+    } catch (error) {
+      return '$error';
+    }
+  }
+
+  Future<String?> finish() async {
+    if (_finishing) return null;
+    _finishing = true;
+    safeNotify();
+    try {
+      await onDone();
+      return null;
+    } catch (error) {
+      return '$error';
+    } finally {
+      _finishing = false;
+      safeNotify();
+    }
+  }
 
   @override
   void dispose() {

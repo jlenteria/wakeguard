@@ -105,7 +105,7 @@ class MainActivity : FlutterActivity() {
         "history" -> AlarmDismissal.history(this)
         "clearHistory" -> { AlarmEvents.clear(this); null }
         "practice" -> {
-            check(AlarmSessions.active(this) == null) { "Finish the ringing alarm before practising" }
+            check(AlarmSessions.active(this) == null) { "Finish the ringing alarm before practicing" }
             startActivity(android.content.Intent(this, AlarmRingActivity::class.java).apply {
                 putExtra("practice", true)
                 putExtra(NativeAlarmScheduler.EXTRA_LABEL, "Challenge practice — no alarm is scheduled")

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -25,6 +27,8 @@ class AlarmController extends ChangeNotifier {
   List<Map<String, Object?>> _history = const [];
   bool _loading = true;
   bool _disposed = false;
+  bool _audibilityTestPlaying = false;
+  Timer? _audibilityTimer;
   String? _fatalError;
   String? _storageError;
   String? _lastError;
@@ -44,6 +48,7 @@ class AlarmController extends ChangeNotifier {
   bool get loading => _loading;
   String? get fatalError => _storageError ?? _fatalError;
   String? get lastError => _lastError;
+  bool get audibilityTestPlaying => _audibilityTestPlaying;
   EngineCapabilities? get capabilities => _capabilities;
 
   /// Blocking health checks; saving is refused while any remain.
@@ -262,6 +267,11 @@ class AlarmController extends ChangeNotifier {
     _setState(() => _history = const []);
   });
 
+  Future<void> refreshHistory() => _queued(() async {
+    final history = await engine.history();
+    _setState(() => _history = history);
+  });
+
   Future<void> restoreNext(Alarm alarm) => _queued(() async {
     final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
     await _upsert(current.copyWith(skipUntilMillis: 0));
@@ -292,11 +302,22 @@ class AlarmController extends ChangeNotifier {
   }
 
   Future<void> runPreflight() async {
-    _setState(() => _lastError = null);
+    if (_audibilityTestPlaying || _disposed) return;
+    _setState(() {
+      _lastError = null;
+      _audibilityTestPlaying = true;
+    });
+    _audibilityTimer = Timer(const Duration(seconds: 10), () {
+      unawaited(stopAudibilitySample());
+    });
     try {
       await engine.playAudibilitySample();
     } on EngineException catch (error) {
+      await stopAudibilitySample();
       _setState(() => _lastError = error.message);
+    } catch (error) {
+      await stopAudibilitySample();
+      _setState(() => _lastError = 'Could not play the sound test: $error');
     }
     await refreshHealth();
   }
@@ -304,6 +325,9 @@ class AlarmController extends ChangeNotifier {
   /// Silences the audibility sample early so leaving the screen it started from
   /// does not let it ring on; best effort, an unimplemented method is fine.
   Future<void> stopAudibilitySample() async {
+    _audibilityTimer?.cancel();
+    _audibilityTimer = null;
+    _setState(() => _audibilityTestPlaying = false);
     try {
       await engine.stopAudibilitySample();
     } on EngineException {
@@ -340,6 +364,7 @@ class AlarmController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _audibilityTimer?.cancel();
     _disposed = true;
     super.dispose();
   }

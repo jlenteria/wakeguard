@@ -65,7 +65,11 @@ class QrSheetScreen extends StatelessWidget {
                     child: const Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 32, color: Colors.black87),
+                        Icon(
+                          Icons.error_outline,
+                          size: 32,
+                          color: Colors.black87,
+                        ),
                         SizedBox(height: 8),
                         Text(
                           'Could not render this code.\nType it in instead.',
@@ -91,16 +95,40 @@ class QrSheetScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: viewModel.saving ? null : () => _saveImage(context),
-              icon: viewModel.saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download_outlined),
-              label: Text(viewModel.saving ? 'Preparing…' : 'Save image'),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: viewModel.saving || viewModel.printing
+                        ? null
+                        : () => _saveImage(context),
+                    icon: viewModel.saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: Text(viewModel.saving ? 'Preparing…' : 'Save image'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: viewModel.printing || viewModel.saving
+                        ? null
+                        : () => _print(context),
+                    icon: viewModel.printing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.print_outlined),
+                    label: Text(viewModel.printing ? 'Preparing…' : 'Print'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -111,7 +139,23 @@ class QrSheetScreen extends StatelessWidget {
   Future<void> _saveImage(BuildContext context) async {
     final error = await viewModel.saveImage(origin: _shareOrigin(context));
     if (error == null || !context.mounted) return;
-    showAppToast(context, kind: ToastKind.error, message: 'Could not save the code', detail: error);
+    showAppToast(
+      context,
+      kind: ToastKind.error,
+      message: 'Could not save the code',
+      detail: error,
+    );
+  }
+
+  Future<void> _print(BuildContext context) async {
+    final error = await viewModel.printCode();
+    if (error == null || !context.mounted) return;
+    showAppToast(
+      context,
+      kind: ToastKind.error,
+      message: 'Could not print the code',
+      detail: error,
+    );
   }
 
   /// iPad/macOS need a popover anchor rect, or the share sheet never appears.

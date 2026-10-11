@@ -30,7 +30,9 @@ class AlarmEditorScreenViewModel extends ViewModel {
     difficulty = existing?.difficulty ?? ChallengeDifficulty.moderate;
     soundPack = existing?.soundPack ?? AlarmSoundPack.pulse;
     snoozeMinutes =
-        existing?.snoozeMinutes ?? defaultSnoozeMinutes ?? Alarm.defaultSnoozeMinutes;
+        existing?.snoozeMinutes ??
+        defaultSnoozeMinutes ??
+        Alarm.defaultSnoozeMinutes;
     checkInMinutes = existing?.checkInMinutes ?? 0;
     escapes = {...?existing?.escapes};
     if (escapes.isEmpty) escapes = {...Alarm.defaultEscapes};
@@ -68,6 +70,7 @@ class AlarmEditorScreenViewModel extends ViewModel {
   bool saving = false;
   String? validationError;
   int? previewing;
+  bool practicing = false;
 
   String get trimmedQr => qrController.text.trim();
   bool get hasQrValue => trimmedQr.isNotEmpty;
@@ -116,18 +119,21 @@ class AlarmEditorScreenViewModel extends ViewModel {
   }
 
   void selectOnce() {
+    validationError = null;
     repeatDaily = false;
     weekdays.clear();
     safeNotify();
   }
 
   void selectEveryDay() {
+    validationError = null;
     repeatDaily = true;
     weekdays.clear();
     safeNotify();
   }
 
   void selectSelectedDays() {
+    validationError = null;
     repeatDaily = true;
     if (weekdays.isEmpty) weekdays = {1, 2, 3, 4, 5};
     safeNotify();
@@ -137,8 +143,15 @@ class AlarmEditorScreenViewModel extends ViewModel {
     if (selected) {
       weekdays.add(day);
     } else {
+      if (weekdays.length == 1 && weekdays.contains(day)) {
+        validationError =
+            'Keep at least one weekday, or choose Once or Every day.';
+        safeNotify();
+        return;
+      }
       weekdays.remove(day);
     }
+    validationError = null;
     safeNotify();
   }
 
@@ -164,7 +177,9 @@ class AlarmEditorScreenViewModel extends ViewModel {
 
   void applyPreset(int index) {
     preset = index;
-    difficulty = index == 2 ? ChallengeDifficulty.strict : ChallengeDifficulty.gentle;
+    difficulty = index == 2
+        ? ChallengeDifficulty.strict
+        : ChallengeDifficulty.gentle;
     escapes = switch (index) {
       0 => {EscapeKind.tap},
       2 => {EscapeKind.qr},
@@ -179,14 +194,16 @@ class AlarmEditorScreenViewModel extends ViewModel {
     safeNotify();
   }
 
-  Future<void> preview(AlarmSoundPack pack) async {
+  Future<String?> preview(AlarmSoundPack pack) async {
+    if (previewingAny || saving) return null;
     previewing = pack.index;
     safeNotify();
     try {
       // Audible regardless of notification volume on both platforms: the point of the check.
       await engine?.playAudibilitySample(soundPack: pack);
-    } catch (_) {
-      // Preview is a convenience; failing it must not block saving.
+      return null;
+    } catch (error) {
+      return '$error';
     } finally {
       previewing = null;
       safeNotify();
@@ -195,23 +212,30 @@ class AlarmEditorScreenViewModel extends ViewModel {
 
   /// Returns an error message, or null when practice started.
   Future<String?> practice() async {
+    if (practicing || saving) return null;
     final problem = _problem();
     if (problem != null) {
       validationError = problem;
       safeNotify();
       return null;
     }
+    practicing = true;
+    safeNotify();
     try {
       await engine?.stopAudibilitySample();
       await engine?.practice(_build());
       return null;
     } catch (error) {
       return '$error';
+    } finally {
+      practicing = false;
+      safeNotify();
     }
   }
 
   /// Validates, stops any preview and returns the alarm to save; null when invalid.
   Future<Alarm?> save() async {
+    if (saving || practicing) return null;
     final problem = _problem();
     if (problem != null) {
       validationError = problem;
@@ -264,7 +288,9 @@ class AlarmEditorScreenViewModel extends ViewModel {
   void dispose() {
     // Covers dismissing the sheet without saving (drag down, back gesture).
     unawaited(
-      (engine?.stopAudibilitySample() ?? Future<void>.value()).catchError((Object _) {}),
+      (engine?.stopAudibilitySample() ?? Future<void>.value()).catchError(
+        (Object _) {},
+      ),
     );
     qrController.removeListener(safeNotify);
     labelController.dispose();

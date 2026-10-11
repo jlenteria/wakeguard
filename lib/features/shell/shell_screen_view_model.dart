@@ -36,6 +36,7 @@ class ShellScreenViewModel extends ViewModel with WidgetsBindingObserver {
   bool _foreground = true;
   bool _cameFromAlarm = false;
   Alarm? _pendingCameraDraft;
+  bool _editorOpen = false;
 
   /// Bumped each minute while the alarms tab is visible, so relative times refresh.
   int _tick = 0;
@@ -43,6 +44,19 @@ class ShellScreenViewModel extends ViewModel with WidgetsBindingObserver {
   int get tab => _tab;
   int get tick => _tick;
   Alarm? get pendingCameraDraft => _pendingCameraDraft;
+  bool get editorOpen => _editorOpen;
+
+  bool beginEditor() {
+    if (_editorOpen) return false;
+    _editorOpen = true;
+    safeNotify();
+    return true;
+  }
+
+  void endEditor() {
+    _editorOpen = false;
+    safeNotify();
+  }
 
   /// True when Health was opened from the alarm flow, so it can offer a way back.
   bool get cameFromAlarm => _cameFromAlarm;

@@ -16,7 +16,7 @@
 </p>
 
 An offline alarm clock for people who dismiss an alarm and fall back asleep.
-Choose a wake challenge, practise it, and optionally ask WakeGuard to check
+Choose a wake challenge, practice it, and optionally ask WakeGuard to check
 you are still up a few minutes later. Alarm readiness is visible before bed.
 
 - **In development:** builds and real-device acceptance testing are pending;

@@ -41,7 +41,8 @@ class EngineCapabilities {
   /// Android: true. iOS: false, camera needs the foreground.
   final bool canUseCameraInBackground;
 
-  /// Both false: no DND policy access, so alarms ring at the user's set volume.
+  /// Android alarm audio is independent of silent/vibrate mode. On iOS this
+  /// requires the Critical Alerts entitlement. Does not imply DND/Focus bypass.
   final bool canBypassSilentSwitch;
 
   /// Android: effectively unlimited. iOS: 64 pending notifications.

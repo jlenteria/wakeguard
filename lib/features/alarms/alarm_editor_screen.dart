@@ -50,7 +50,15 @@ class AlarmEditorScreen extends StatelessWidget {
 
   final AlarmEditorScreenViewModel viewModel;
 
-  static const _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _weekdayNames = [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
+  ];
 
   /// Snooze lengths offered; zero means no snooze, the point of a strict alarm.
   static const _snoozeChoices = [0, 5, 9, 15];
@@ -67,31 +75,46 @@ class AlarmEditorScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(viewModel.isExisting ? 'Edit alarm' : 'Make tomorrow morning easier',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              viewModel.isExisting
+                  ? 'Edit alarm'
+                  : 'Make tomorrow morning easier',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final (index, name) in [
-                (0, 'Simple'),
-                (1, 'Challenge'),
-                (2, 'Get out of bed')
-              ])
-                ChoiceChip(
-                  label: Text(name),
-                  selected: viewModel.preset == index,
-                  onSelected: (_) => viewModel.applyPreset(index),
-                ),
-            ]),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (index, name) in [
+                  (0, 'Simple'),
+                  (1, 'Challenge'),
+                  (2, 'Get out of bed'),
+                ])
+                  ChoiceChip(
+                    label: Text(name),
+                    selected: viewModel.preset == index,
+                    onSelected: (_) => viewModel.applyPreset(index),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
-            Text('Presets set the challenge, snooze and check-in. You can customise everything below.',
-                style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              'Presets set the challenge, snooze and check-in. You can customise everything below.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             TextButton(
               onPressed: () async {
-                final picked =
-                    await showTimePicker(context: context, initialTime: viewModel.time);
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: viewModel.time,
+                );
                 if (picked != null) viewModel.setTime(picked);
               },
-              child: Text(viewModel.time.format(context), style: const TextStyle(fontSize: 52)),
+              child: Text(
+                viewModel.time.format(context),
+                style: const TextStyle(fontSize: 52),
+              ),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -116,7 +139,8 @@ class AlarmEditorScreen extends StatelessWidget {
                   FilterChip(
                     label: Text(escape.label),
                     selected: viewModel.escapes.contains(escape),
-                    onSelected: (selected) => viewModel.toggleEscape(escape, selected),
+                    onSelected: (selected) =>
+                        viewModel.toggleEscape(escape, selected),
                   ),
               ],
             ),
@@ -125,7 +149,10 @@ class AlarmEditorScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   viewModel.validationError!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             // Only when QR is on: an unused code field is one more thing to misread at 05:00.
@@ -137,10 +164,10 @@ class AlarmEditorScreen extends StatelessWidget {
                   labelText: 'QR code secret',
                   helperText: viewModel.qrController.text.isEmpty
                       ? 'Generate one, then print or show it away from the '
-                          'bed so getting up is unavoidable.'
+                            'bed so getting up is unavoidable.'
                       : viewModel.usesSharedQr
-                          ? 'Your shared wake-up QR. Print once for all alarms using it.'
-                          : 'Custom code for this alarm. Existing printed codes still work.',
+                      ? 'Your shared wake-up QR. Print once for all alarms using it.'
+                      : 'Custom code for this alarm. Existing printed codes still work.',
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.qr_code_2_outlined),
                     tooltip: 'Generate a custom code for this alarm',
@@ -154,7 +181,11 @@ class AlarmEditorScreen extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
                     icon: const Icon(Icons.qr_code_scanner_outlined),
-                    label: Text(viewModel.usesSharedQr ? 'Show wake-up QR' : 'Show QR code'),
+                    label: Text(
+                      viewModel.usesSharedQr
+                          ? 'Show wake-up QR'
+                          : 'Show QR code',
+                    ),
                     onPressed: () => _showQrSheet(context, viewModel.trimmedQr),
                   ),
                 ),
@@ -168,23 +199,27 @@ class AlarmEditorScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Repeat', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            Wrap(spacing: 8, children: [
-              ChoiceChip(
-                label: const Text('Once'),
-                selected: !viewModel.repeatDaily,
-                onSelected: (_) => viewModel.selectOnce(),
-              ),
-              ChoiceChip(
-                label: const Text('Every day'),
-                selected: viewModel.repeatDaily && viewModel.weekdays.isEmpty,
-                onSelected: (_) => viewModel.selectEveryDay(),
-              ),
-              ChoiceChip(
-                label: const Text('Selected days'),
-                selected: viewModel.repeatDaily && viewModel.weekdays.isNotEmpty,
-                onSelected: (_) => viewModel.selectSelectedDays(),
-              ),
-            ]),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Once'),
+                  selected: !viewModel.repeatDaily,
+                  onSelected: (_) => viewModel.selectOnce(),
+                ),
+                ChoiceChip(
+                  label: const Text('Every day'),
+                  selected: viewModel.repeatDaily && viewModel.weekdays.isEmpty,
+                  onSelected: (_) => viewModel.selectEveryDay(),
+                ),
+                ChoiceChip(
+                  label: const Text('Selected days'),
+                  selected:
+                      viewModel.repeatDaily && viewModel.weekdays.isNotEmpty,
+                  onSelected: (_) => viewModel.selectSelectedDays(),
+                ),
+              ],
+            ),
             if (viewModel.repeatDaily && viewModel.weekdays.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -194,31 +229,40 @@ class AlarmEditorScreen extends StatelessWidget {
                     FilterChip(
                       label: Text(_weekdayNames[day - 1]),
                       selected: viewModel.weekdays.contains(day),
-                      onSelected: (selected) => viewModel.toggleWeekday(day, selected),
+                      onSelected: (selected) =>
+                          viewModel.toggleWeekday(day, selected),
                     ),
                 ],
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  viewModel.weekdays.isEmpty ? 'Every day' : 'Selected weekdays only',
+                  viewModel.weekdays.isEmpty
+                      ? 'Every day'
+                      : 'Selected weekdays only',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
             ],
             const SizedBox(height: 16),
-            Text('Wake challenge', style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              'Wake challenge',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
             const SizedBox(height: 8),
             SegmentedButton<ChallengeDifficulty>(
               segments: [
                 for (final difficulty in ChallengeDifficulty.values)
                   ButtonSegment(
                     value: difficulty,
-                    label: Text('${difficulty.label} (${difficulty.stepCount})'),
+                    label: Text(
+                      '${difficulty.label} (${difficulty.stepCount})',
+                    ),
                   ),
               ],
               selected: {viewModel.difficulty},
-              onSelectionChanged: (value) => viewModel.setDifficulty(value.first),
+              onSelectionChanged: (value) =>
+                  viewModel.setDifficulty(value.first),
             ),
             const SizedBox(height: 16),
             Text('Sound', style: Theme.of(context).textTheme.titleSmall),
@@ -231,7 +275,8 @@ class AlarmEditorScreen extends StatelessWidget {
             const SizedBox(height: 8),
             RadioGroup<AlarmSoundPack>(
               groupValue: viewModel.soundPack,
-              onChanged: (value) => viewModel.setSoundPack(value ?? viewModel.soundPack),
+              onChanged: (value) =>
+                  viewModel.setSoundPack(value ?? viewModel.soundPack),
               child: Column(
                 children: [
                   for (final pack in AlarmSoundPack.values)
@@ -249,8 +294,9 @@ class AlarmEditorScreen extends StatelessWidget {
                           : IconButton(
                               icon: const Icon(Icons.volume_up_outlined),
                               tooltip: 'Preview ${pack.label}',
-                              onPressed:
-                                  viewModel.previewingAny ? null : () => viewModel.preview(pack),
+                              onPressed: viewModel.previewingAny
+                                  ? null
+                                  : () => _preview(context, pack),
                             ),
                     ),
                 ],
@@ -278,29 +324,45 @@ class AlarmEditorScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             if (viewModel.canCheckIn) ...[
-              Text('Stay Awake check-in', style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                'Stay Awake check-in',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 4),
               const Text(
-                  "After dismissal, tap ‘I'm up’ in a notification. You have 1 minute to respond; otherwise one follow-up alarm rings. Off by default."),
+                "After dismissal, tap ‘I'm up’ in a notification. You have 1 minute to respond; otherwise one follow-up alarm rings. Off by default.",
+              ),
               const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: [
-                for (final minutes in [0, 3, 5, 10])
-                  ChoiceChip(
-                    label: Text(minutes == 0 ? 'Off' : '$minutes min'),
-                    selected: viewModel.checkInMinutes == minutes,
-                    onSelected: (_) => viewModel.setCheckInMinutes(minutes),
-                  ),
-              ]),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final minutes in [0, 3, 5, 10])
+                    ChoiceChip(
+                      label: Text(minutes == 0 ? 'Off' : '$minutes min'),
+                      selected: viewModel.checkInMinutes == minutes,
+                      onSelected: (_) => viewModel.setCheckInMinutes(minutes),
+                    ),
+                ],
+              ),
             ],
             if (viewModel.engine != null && viewModel.canPractice)
               TextButton.icon(
-                onPressed: () => _practice(context),
+                onPressed: viewModel.practicing || viewModel.saving
+                    ? null
+                    : () => _practice(context),
                 icon: const Icon(Icons.play_circle_outline),
-                label: const Text('Practise this challenge — no alarm scheduled'),
+                label: Text(
+                  viewModel.practicing
+                      ? 'Starting practice…'
+                      : 'Practice this challenge — no alarm scheduled',
+                ),
               ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: viewModel.saving ? null : () => _save(context),
+              onPressed: viewModel.saving || viewModel.practicing
+                  ? null
+                  : () => _save(context),
               child: Text(viewModel.saving ? 'Saving…' : 'Save alarm'),
             ),
           ],
@@ -312,7 +374,24 @@ class AlarmEditorScreen extends StatelessWidget {
   Future<void> _practice(BuildContext context) async {
     final error = await viewModel.practice();
     if (error == null || !context.mounted) return;
-    showAppToast(context, kind: ToastKind.error, message: 'Could not start practice', detail: error);
+    showAppToast(
+      context,
+      kind: ToastKind.error,
+      message: 'Could not start practice',
+      detail: error,
+    );
+  }
+
+  Future<void> _preview(BuildContext context, AlarmSoundPack pack) async {
+    final error = await viewModel.preview(pack);
+    if (error != null && context.mounted) {
+      showAppToast(
+        context,
+        kind: ToastKind.error,
+        message: 'Could not play sound preview',
+        detail: error,
+      );
+    }
   }
 
   Future<void> _save(BuildContext context) async {

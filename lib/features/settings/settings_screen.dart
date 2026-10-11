@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import '../../models/app_settings.dart';
 import '../../shared/toast.dart';
 import '../challenges/qr_sheet.dart';
+import '../support/support_screen.dart';
 import 'settings_screen_view_model.dart';
 
-/// App-wide preferences plus the wake-up record.
-/// Its own tab: theme, snooze defaults and the streak are things users seek out.
+/// App-wide preferences, wake-up QR, package information and optional support.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.viewModel});
 
@@ -17,12 +17,11 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = viewModel.value;
-    final stats = viewModel.stats;
     final text = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
           _Section(
             title: 'Appearance',
@@ -37,8 +36,9 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           _Section(
-            title: 'Default snooze',
-            subtitle: 'Applied to alarms you create from now on. Each alarm '
+            title: 'Alarm defaults',
+            subtitle:
+                'Applied to alarms you create from now on. Each alarm '
                 'can override it, including switching snooze off entirely.',
             child: Wrap(
               spacing: 8,
@@ -47,73 +47,87 @@ class SettingsScreen extends StatelessWidget {
                   ChoiceChip(
                     label: Text(SettingsScreenViewModel.snoozeLabel(minutes)),
                     selected: settings.defaultSnoozeMinutes == minutes,
-                    onSelected: (_) =>
-                        viewModel.update(settings.copyWith(defaultSnoozeMinutes: minutes)),
+                    onSelected: (_) => viewModel.update(
+                      settings.copyWith(defaultSnoozeMinutes: minutes),
+                    ),
                   ),
               ],
             ),
           ),
-          const Divider(height: 32),
           _Section(
             title: 'Wake-up QR',
-            subtitle: 'Print once and place it away from bed. New QR alarms reuse '
+            subtitle:
+                'Print once and place it away from bed. New QR alarms reuse '
                 'this code. Existing custom codes stay unchanged.',
             child: FilledButton.tonalIcon(
-              icon: const Icon(Icons.qr_code_2),
-              label: const Text('Show wake-up QR'),
-              onPressed: () async {
-                try {
-                  final value = await viewModel.wakeUpQrValue();
-                  if (!context.mounted) return;
-                  await showModalBottomSheet<void>(
-                    context: context,
-                    showDragHandle: true,
-                    isScrollControlled: true,
-                    builder: (_) => QrSheet(value: value),
-                  );
-                } catch (error) {
-                  if (context.mounted) {
-                    showAppToast(context,
-                        kind: ToastKind.error, message: 'Could not load wake-up QR', detail: '$error');
-                  }
-                }
-              },
+              icon: viewModel.loadingQr
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.qr_code_2),
+              label: Text(
+                viewModel.loadingQr ? 'Opening QR…' : 'Show wake-up QR',
+              ),
+              onPressed: viewModel.openingQr
+                  ? null
+                  : () async {
+                      if (!viewModel.beginQrOpen()) return;
+                      try {
+                        final value = await viewModel.wakeUpQrValue();
+                        viewModel.finishQrLoad();
+                        if (!context.mounted) return;
+                        await showModalBottomSheet<void>(
+                          context: context,
+                          showDragHandle: true,
+                          isScrollControlled: true,
+                          builder: (_) => QrSheet(value: value),
+                        );
+                      } catch (error) {
+                        if (context.mounted) {
+                          showAppToast(
+                            context,
+                            kind: ToastKind.error,
+                            message: 'Could not load wake-up QR',
+                            detail: '$error',
+                          );
+                        }
+                      } finally {
+                        viewModel.endQrOpen();
+                      }
+                    },
             ),
           ),
           _Section(
-            title: 'Wake-ups',
+            title: 'About',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: 24,
-                  runSpacing: 16,
-                  children: [
-                    _Stat(value: '${stats.streak}', label: 'scheduled-day streak'),
-                    _Stat(value: '${stats.totalDays}', label: 'days completed'),
-                  ],
-                ),
+                Text('WakeGuard', style: text.titleMedium),
+                const SizedBox(height: 4),
+                Text('Version ${viewModel.version}', style: text.bodySmall),
                 const SizedBox(height: 12),
                 Text(
-                  stats.lastAt == null
-                      ? 'No wake-ups recorded yet. They appear here after you '
-                          'dismiss an alarm.'
-                      : 'Last: ${SettingsScreenViewModel.methodLabel(stats.lastMethod)} '
-                          '· ${SettingsScreenViewModel.ago(stats.lastAt!)}',
+                  'Start your morning with purpose. WakeGuard combines offline '
+                  'alarms, wake-up challenges and optional Stay Awake check-ins.\n\n'
+                  'Free. No ads, accounts or tracking. Your alarms and history '
+                  'stay on your device. Camera challenges run on-device; '
+                  'images are never saved or uploaded.',
                   style: text.bodySmall,
                 ),
               ],
             ),
           ),
-          const Divider(height: 32),
-          _Section(
-            title: 'About',
-            child: Text(
-              'WakeGuard is free, with no ads, no accounts and no tracking. '
-              'Everything it stores stays on this phone. The camera is used '
-              'only while a challenge is on screen, and frames are never saved '
-              'or sent anywhere.',
-              style: text.bodySmall,
+          ListTile(
+            leading: const Icon(Icons.favorite_border),
+            title: const Text('Support WakeGuard'),
+            subtitle: const Text(
+              'Optional support for independent development',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SupportScreen()),
             ),
           ),
         ],
@@ -131,37 +145,23 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 12),
+            child,
           ],
-          const SizedBox(height: 12),
-          child,
-        ],
+        ),
       ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.label});
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(value, style: Theme.of(context).textTheme.headlineMedium),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ],
     );
   }
 }

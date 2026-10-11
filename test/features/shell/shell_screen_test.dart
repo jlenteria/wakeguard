@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakeguard/features/alarms/alarm_controller.dart';
 import 'package:wakeguard/features/alarms/alarm_repository.dart';
+import 'package:wakeguard/features/alarms/alarm_editor_screen.dart';
 import 'package:wakeguard/features/settings/settings_controller.dart';
 import 'package:wakeguard/features/shell/shell_screen.dart';
 import 'package:wakeguard/features/shell/shell_screen_view_model.dart';
@@ -66,8 +67,15 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Add alarm'));
+        final openEditor = tester
+            .widget<FloatingActionButton>(
+              find.widgetWithText(FloatingActionButton, 'Add alarm'),
+            )
+            .onPressed!;
+        openEditor();
+        openEditor();
         await tester.pumpAndSettle();
+        expect(find.byType(AlarmEditor), findsOneWidget);
         await tester.ensureVisible(find.text('Save alarm'));
         await tester.tap(find.text('Save alarm'));
         await tester.pumpAndSettle();

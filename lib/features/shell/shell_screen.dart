@@ -19,7 +19,7 @@ import 'shell_screen_view_model.dart';
 import '../../shared/toast.dart';
 import '../../shared/view_model.dart';
 
-/// The signed-in shell: onboarding gate, the four tabs, and the alarm editor
+/// The app shell: onboarding gate, the four tabs, and the alarm editor
 /// flow that can bounce through Health when camera access is missing.
 class ShellScreen extends StatelessWidget {
   const ShellScreen({super.key, required this.viewModel});
@@ -38,7 +38,9 @@ class ShellScreen extends StatelessWidget {
           onDone: () async {
             // Entering the shell: silence any sound test onboarding left running.
             await viewModel.controller.stopAudibilitySample();
-            await viewModel.settings.update((s) => s.copyWith(onboardingDone: true));
+            await viewModel.settings.update(
+              (s) => s.copyWith(onboardingDone: true),
+            );
           },
         ),
         builder: (_, vm) => OnboardingScreen(viewModel: vm),
@@ -48,7 +50,10 @@ class ShellScreen extends StatelessWidget {
     final fatalError = viewModel.controller.fatalError;
     return Scaffold(
       body: fatalError != null
-          ? _FatalErrorView(message: fatalError, onRetry: viewModel.controller.retry)
+          ? _FatalErrorView(
+              message: fatalError,
+              onRetry: viewModel.controller.retry,
+            )
           : IndexedStack(
               index: viewModel.tab,
               children: [
@@ -57,7 +62,8 @@ class ShellScreen extends StatelessWidget {
                   builder: (_, vm) => AlarmsScreen(
                     viewModel: vm,
                     onOpenHealth: viewModel.openHealth,
-                    onOpen: (alarm) => _openEditor(context, viewModel, existing: alarm),
+                    onOpen: (alarm) =>
+                        _openEditor(context, viewModel, existing: alarm),
                   ),
                 ),
                 ViewModelProvider<HealthScreenViewModel>(
@@ -67,16 +73,23 @@ class ShellScreen extends StatelessWidget {
                     // Shown whenever Health was reached from the alarm flow, even
                     // without a draft: the user should be able to get back.
                     onReturnToAlarm:
-                        viewModel.pendingCameraDraft == null && !viewModel.cameFromAlarm
-                            ? null
-                            : () {
-                                final draft = viewModel.pendingCameraDraft;
-                                if (draft == null) {
-                                  viewModel.selectTab(0);
-                                } else {
-                                  unawaited(_openEditor(context, viewModel, existing: draft));
-                                }
-                              },
+                        viewModel.pendingCameraDraft == null &&
+                            !viewModel.cameFromAlarm
+                        ? null
+                        : () {
+                            final draft = viewModel.pendingCameraDraft;
+                            if (draft == null) {
+                              viewModel.selectTab(0);
+                            } else {
+                              unawaited(
+                                _openEditor(
+                                  context,
+                                  viewModel,
+                                  existing: draft,
+                                ),
+                              );
+                            }
+                          },
                   ),
                 ),
                 ViewModelProvider<HistoryScreenViewModel>(
@@ -84,8 +97,10 @@ class ShellScreen extends StatelessWidget {
                   builder: (_, vm) => HistoryScreen(viewModel: vm),
                 ),
                 ViewModelProvider<SettingsScreenViewModel>(
-                  create: (_) =>
-                      SettingsScreenViewModel(viewModel.controller, viewModel.settings),
+                  create: (_) => SettingsScreenViewModel(
+                    viewModel.controller,
+                    viewModel.settings,
+                  ),
                   builder: (_, vm) => SettingsScreen(viewModel: vm),
                 ),
               ],
@@ -118,7 +133,9 @@ class ShellScreen extends StatelessWidget {
       ),
       floatingActionButton: viewModel.tab == 0
           ? FloatingActionButton.extended(
-              onPressed: () => _openEditor(context, viewModel),
+              onPressed: viewModel.editorOpen
+                  ? null
+                  : () => _openEditor(context, viewModel),
               icon: const Icon(Icons.alarm_add),
               label: const Text('Add alarm'),
             )
@@ -131,17 +148,36 @@ class ShellScreen extends StatelessWidget {
     ShellScreenViewModel viewModel, {
     Alarm? existing,
   }) async {
+    if (!viewModel.beginEditor()) return;
+    try {
+      await _editAlarm(context, viewModel, existing: existing);
+    } finally {
+      viewModel.endEditor();
+    }
+  }
+
+  Future<void> _editAlarm(
+    BuildContext context,
+    ShellScreenViewModel viewModel, {
+    Alarm? existing,
+  }) async {
     final controller = viewModel.controller;
     String sharedQr;
     try {
-      final codes =
-          controller.alarms.map((a) => a.qrValue.trim()).where((code) => code.isNotEmpty);
-      sharedQr = await WakeUpQrRepository()
-          .getOrCreate(preferredValue: codes.isEmpty ? null : codes.first);
+      final codes = controller.alarms
+          .map((a) => a.qrValue.trim())
+          .where((code) => code.isNotEmpty);
+      sharedQr = await WakeUpQrRepository().getOrCreate(
+        preferredValue: codes.isEmpty ? null : codes.first,
+      );
     } catch (error) {
       if (context.mounted) {
-        showAppToast(context,
-            kind: ToastKind.error, message: 'Could not load wake-up QR', detail: '$error');
+        showAppToast(
+          context,
+          kind: ToastKind.error,
+          message: 'Could not load wake-up QR',
+          detail: '$error',
+        );
       }
       return;
     }
@@ -167,10 +203,13 @@ class ShellScreen extends StatelessWidget {
     if (controller.cameraPermissionMissingFor(draft)) {
       viewModel.setPendingCameraDraft(draft);
       viewModel.openHealth();
-      showAppToast(context,
-          kind: ToastKind.error,
-          message: 'Alarm not saved',
-          detail: 'Enable Camera in Health, then tap Return to alarm to save your draft.');
+      showAppToast(
+        context,
+        kind: ToastKind.error,
+        message: 'Alarm not saved',
+        detail:
+            'Enable Camera in Health, then tap Return to alarm to save your draft.',
+      );
       return;
     }
     final unresolved = controller.unresolvedChecks;
@@ -183,7 +222,8 @@ class ShellScreen extends StatelessWidget {
         context,
         kind: ToastKind.error,
         message: 'Saved, but switched off',
-        detail: '${unresolved.map((c) => c.label).join(', ')} must be fixed first. '
+        detail:
+            '${unresolved.map((c) => c.label).join(', ')} must be fixed first. '
             'Turn the alarm on once the Health tab is clear.',
         duration: const Duration(seconds: 8),
       );
@@ -197,14 +237,18 @@ class ShellScreen extends StatelessWidget {
       viewModel.selectTab(0);
     }
     final at = controller.nextFireTime(draft.id);
-    final message = error ??
+    final message =
+        error ??
         (!draft.enabled
             ? 'Saved, switched off.'
             : at == null
-                ? 'Saved. Check alarm readiness.'
-                : 'Next alarm: ${MaterialLocalizations.of(context).formatMediumDate(at)} at ${TimeOfDay.fromDateTime(at).format(context)}');
-    showAppToast(context,
-        kind: error == null ? ToastKind.success : ToastKind.error, message: message);
+            ? 'Saved. Check alarm readiness.'
+            : 'Next alarm: ${MaterialLocalizations.of(context).formatMediumDate(at)} at ${TimeOfDay.fromDateTime(at).format(context)}');
+    showAppToast(
+      context,
+      kind: error == null ? ToastKind.success : ToastKind.error,
+      message: message,
+    );
   }
 }
 
