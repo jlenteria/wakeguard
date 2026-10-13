@@ -19,7 +19,9 @@ final class WakeChallengeViewController: UIViewController {
     private var actions: [WakeAction] = []
     private var actionIndex = 0
     private var challengeComplete = false
-    private var successCloseWork: DispatchWorkItem?
+    private var successCountdownTimer: Timer?
+    private var successCountdownLabel: UILabel?
+    private var successCloseDeadline: TimeInterval?
 
     private let answerField = UITextField()
     private let instructionLabel = UILabel()
@@ -96,7 +98,7 @@ final class WakeChallengeViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        successCloseWork?.cancel()
+        successCountdownTimer?.invalidate()
         restoreBrightness()
         UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
         analysisGeneration += 1
@@ -680,9 +682,32 @@ final class WakeChallengeViewController: UIViewController {
         restoreBrightness()
         AlarmActionHandler.shared.dismissFromChallenge(alarmId: alarm.id, method: method)
         showSuccess()
-        let close = DispatchWorkItem { [weak self] in self?.dismiss(animated: true) }
-        successCloseWork = close
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.successCloseDelay, execute: close)
+        startSuccessCountdown()
+    }
+
+    private func startSuccessCountdown() {
+        successCountdownTimer?.invalidate()
+        successCloseDeadline = ProcessInfo.processInfo.systemUptime + Self.successCloseDelay
+        updateSuccessCountdown()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            self.updateSuccessCountdown()
+        }
+        successCountdownTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func updateSuccessCountdown() {
+        guard let deadline = successCloseDeadline else { return }
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else {
+            successCountdownTimer?.invalidate()
+            dismiss(animated: true)
+            return
+        }
+        let seconds = Int(ceil(remaining))
+        let key = seconds == 1 ? "challenge.success.auto_close.one" : "challenge.success.auto_close"
+        successCountdownLabel?.text = String(format: NSLocalizedString(key, comment: ""), seconds)
     }
 
     private func showSuccess() {
@@ -780,11 +805,14 @@ final class WakeChallengeViewController: UIViewController {
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 24, bottom: 16, trailing: 24)
         close.configuration = configuration
         close.addAction(UIAction { [weak self] _ in
-            self?.successCloseWork?.cancel()
+            self?.successCountdownTimer?.invalidate()
             self?.dismiss(animated: true)
         }, for: .touchUpInside)
         card.addArrangedSubview(close)
-        card.addArrangedSubview(successLabel("challenge.success.auto_close", style: .caption1, color: .lightGray))
+        let countdownLabel = successLabel("challenge.success.auto_close", style: .caption1, color: .lightGray)
+        countdownLabel.text = nil
+        successCountdownLabel = countdownLabel
+        card.addArrangedSubview(countdownLabel)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         UIAccessibility.post(notification: .screenChanged, argument: title)
         if !UIAccessibility.isReduceMotionEnabled {

@@ -51,7 +51,8 @@
 "challenge.success.title" = "You're ready";
 "challenge.success.detail" = "Alarm stopped. Have a good morning.";
 "challenge.success.close" = "Close";
-"challenge.success.auto_close" = "Closes automatically in 5 seconds";
+"challenge.success.auto_close" = "Closes automatically in %d seconds";
+"challenge.success.auto_close.one" = "Closes automatically in %d second";
 
 /* Face actions */
 "action.blink" = "Blink twice";

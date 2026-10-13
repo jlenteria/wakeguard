@@ -47,6 +47,16 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    override fun onResume() {
+        super.onResume()
+        AlarmChallengeLauncher.onResumed(this)
+    }
+
+    override fun onPause() {
+        AlarmChallengeLauncher.onPaused(this)
+        super.onPause()
+    }
+
     override fun onDestroy() {
         channelAlive = false
         mainHandler.removeCallbacksAndMessages(null)

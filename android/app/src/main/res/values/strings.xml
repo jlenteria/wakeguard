@@ -8,4 +8,8 @@
     <string name="snoozed_for_minutes">Snoozed for %1$d minutes</string>
     <string name="snooze_failed">Could not snooze. Open the alarm and try again; check that exact alarms are allowed.</string>
     <string name="alarm_dismissed">Alarm dismissed</string>
+    <plurals name="success_auto_close">
+        <item quantity="one">Closes automatically in %d second</item>
+        <item quantity="other">Closes automatically in %d seconds</item>
+    </plurals>
 </resources>

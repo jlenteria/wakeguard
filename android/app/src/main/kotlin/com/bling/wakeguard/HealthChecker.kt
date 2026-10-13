@@ -114,8 +114,8 @@ object HealthChecker {
             id = "checkin_sound",
             label = "Stay Awake reminder sound",
             passing = StayAwake.remindersAudible(context),
-            ok = "Stay Awake reminders can make a sound or vibrate. Check notification volume and Do Not Disturb too.",
-            bad = "Turn on sound or vibration for Stay Awake reminders in WakeGuard’s notification settings. You have 1 minute to respond.",
+            ok = "Stay Awake reminders have a notification sound. Check notification volume and Do Not Disturb too.",
+            bad = "Turn on sound for Stay Awake reminders in WakeGuard’s notification settings. You have 1 minute to respond.",
             action = "checkin_notification",
             severity = HealthSeverityValue.warning,
         ))

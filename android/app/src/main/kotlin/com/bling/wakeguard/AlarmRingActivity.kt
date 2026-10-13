@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -95,6 +96,7 @@ class AlarmRingActivity : AppCompatActivity() {
     private var lastFaceAt = 0L
     private var lastAnalysisAt = 0L
     private var lastObjectSecond = -1
+    private var successCountdown: CountDownTimer? = null
 
     private val stopListener: () -> Unit = {
         runOnUiThread {
@@ -543,6 +545,7 @@ class AlarmRingActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(24), dp(32), dp(24), dp(32))
         }
+        val countdownLabel = text("", 12f, MUTED)
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -569,7 +572,7 @@ class AlarmRingActivity : AppCompatActivity() {
                 background = rounded(ACCENT, 16)
                 setTextColor(BACKGROUND)
             }, fullWidth(28))
-            addView(text("Closes automatically in 5 seconds", 12f, MUTED), fullWidth(14))
+            addView(countdownLabel, fullWidth(14))
         }
         content.addView(card, fullWidth())
         success.addView(content, ViewGroup.LayoutParams(-1, -2))
@@ -582,7 +585,16 @@ class AlarmRingActivity : AppCompatActivity() {
             success.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
         }
         success.announceForAccessibility("${if (practice) "Practice complete" else "Alarm stopped"}. $detail")
-        main.postDelayed({ if (!destroyed) finishAndRemoveTask() }, SUCCESS_CLOSE_DELAY_MS)
+        successCountdown = object : CountDownTimer(SUCCESS_CLOSE_DELAY_MS, 1000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                if (destroyed || isFinishing) { cancel(); return }
+                val seconds = ((millisUntilFinished + 999L) / 1000L).toInt()
+                countdownLabel.text = resources.getQuantityString(R.plurals.success_auto_close, seconds, seconds)
+            }
+            override fun onFinish() {
+                if (!destroyed && !isFinishing) finishAndRemoveTask()
+            }
+        }.start()
     }
 
     private fun setProgress(amount: Float) {
@@ -618,6 +630,7 @@ class AlarmRingActivity : AppCompatActivity() {
     }
     override fun onResume() {
         super.onResume()
+        AlarmChallengeLauncher.onResumed(this)
         if (!::preview.isInitialized) return
         preview.post {
             if (!destroyed && !challengeComplete &&
@@ -626,6 +639,14 @@ class AlarmRingActivity : AppCompatActivity() {
             }
         }
     }
+    internal fun isShowingSession(token: String): Boolean =
+        !practice && !challengeComplete && sessionId == token
+
+    override fun onPause() {
+        AlarmChallengeLauncher.onPaused(this)
+        super.onPause()
+    }
+
     override fun onStop() {
         generation++
         objectProgress.reset(); eyesOpenSince = 0L; eyesWereClosed = false
@@ -644,6 +665,7 @@ class AlarmRingActivity : AppCompatActivity() {
     }
     override fun onDestroy() {
         destroyed = true; generation++
+        successCountdown?.cancel()
         if (RingingState.onStopped === stopListener) RingingState.onStopped = null
         main.removeCallbacksAndMessages(null)
         progressAnimator?.cancel()

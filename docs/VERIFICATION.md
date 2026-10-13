@@ -43,6 +43,12 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
    two blinks and eyes-open duration. Switch challenges during inference. Stale
    results must not complete a different challenge. Turn the room light off/on;
    the app must not change screen brightness or offer a brightness slider.
+   With WakeGuard open on any tab or sheet, a ringing alarm must open its native
+   challenge without tapping the notification. Opening WakeGuard while an alarm
+   is already ringing must do the same. Recovery refreshes must not restart a
+   challenge already on screen. Repeat while a previous success screen is visible.
+   With the phone locked, verify full-screen opening when permission is granted;
+   with permission denied or another app visible, Android may show a notification.
 6. **Object practice:** separately test Sink and Cup; Plant must not be offered.
    Sink starts at exact-label confidence >= 0.70, then maintains at >= 0.60.
    Cup requires >= 0.80. Completion needs at least eight matches and three seconds
@@ -76,8 +82,11 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
     follow-ups offer no snooze. Tomorrow's repeat survives dismissal/snooze;
     skip/restore and disabled duplication still work without camera permission.
 13. **Stay Awake:** enable 3 minutes and dismiss using each selected challenge.
-    History must show Check-in scheduled, then Reminder shown; verify sound and
-    vibration and confirm I'm up within one minute. Confirming prevents follow-up.
+    History must show Check-in scheduled, then Reminder shown; verify the short
+    bundled notification chime and vibration, including after upgrading an existing
+    install. Ringing, fallback and alarm-stopped notifications must have no chime;
+    the selected alarm tone must still play through the ringing service. Confirm
+    I'm up within one minute. Confirming prevents follow-up.
     Unanswered checks create exactly one follow-up, with no snooze or further
     check-in. Practice creates no check-in. Block/mute the check-in channel and
     verify Health plus explicit blocked/failed history rather than silent success.

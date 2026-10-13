@@ -87,6 +87,7 @@ object AlarmSessions {
             .onFailure { android.util.Log.e("WakeGuard", "Watchdog recovery could not be armed", it) }
         runCatching { RingingService.start(context, session.alarm, elapsed) }
             .onFailure { RingingService.postFallbackNotification(context, session.alarm) }
+        AlarmChallengeLauncher.openIfVisible(context, session)
     }
 
     fun expire(context: Context, session: AlarmSession) {

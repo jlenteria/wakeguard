@@ -16,7 +16,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.provider.Settings
 import androidx.core.app.NotificationCompat
 
 /**
@@ -27,7 +26,7 @@ class RingingService : Service() {
 
     companion object {
         // Sound/vibration settings are immutable after a channel is created.
-        private const val CHANNEL_ID = "wakeguard.ringing.audible.v3"
+        private const val CHANNEL_ID = "wakeguard.ringing.silent.v4"
         private val NOTIFICATION_VIBRATION = longArrayOf(0, 500, 300, 500)
         private const val NOTIFICATION_ID_BASE = 0x5700
         private const val KEY_ELAPSED_MS = "elapsedMs"
@@ -90,7 +89,7 @@ class RingingService : Service() {
 
         /**
          * Posts the notification without starting the service, for when Android refuses the
-         * foreground start; a silent, invisible alarm is the failure this app exists to prevent.
+         * foreground start, so the challenge remains accessible. Notification sound is disabled.
          */
         fun postFallbackNotification(context: Context, alarm: StoredAlarm) {
             createChannel(context)
@@ -117,7 +116,7 @@ class RingingService : Service() {
                 .setContentTitle(context.getString(R.string.app_name))
                 .setContentText(context.getString(R.string.alarm_dismissed))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioManager.STREAM_ALARM)
+                .setSound(null)
                 .setVibrate(NOTIFICATION_VIBRATION)
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
@@ -132,12 +131,9 @@ class RingingService : Service() {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Active WakeGuard alarms"
-                // A short notification chime also covers a refused foreground-service
-                // start. The selected alarm tone still loops through MediaPlayer.
-                setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build())
+                // Only Stay Awake notifications play a chime. Ringing audio is
+                // handled separately by MediaPlayer using the selected alarm tone.
+                setSound(null, null)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 enableVibration(true)
                 vibrationPattern = NOTIFICATION_VIBRATION
@@ -169,9 +165,9 @@ class RingingService : Service() {
                 .setContentText(prompt)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioManager.STREAM_ALARM)
+                .setSound(null)
                 .setVibrate(NOTIFICATION_VIBRATION)
-                // Recovery refreshes should not replay the chime over the looping tone.
+                // Recovery refreshes should not repeat vibration over the looping tone.
                 .setOnlyAlertOnce(true)
                 .setOngoing(true)
                 .setAutoCancel(false)
@@ -279,6 +275,7 @@ class RingingService : Service() {
             ?: AlarmSounds.DEFAULT_PACK
 
         val alarm = session.alarm
+        val newSession = RingingState.sessionId != session.token
         RingingState.activeAlarm = alarm
         RingingState.sessionId = session.token
 
@@ -295,6 +292,7 @@ class RingingService : Service() {
         volumeHandler.post(volumeGuard)
         startPlayback()
         scheduleEscalation(elapsed)
+        if (newSession) AlarmChallengeLauncher.openIfVisible(this, session)
 
         return START_REDELIVER_INTENT
     }

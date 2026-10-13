@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakeguard/models/alarm.dart';
@@ -339,6 +340,23 @@ void main() {
   });
 
   group('sound pack', () {
+    test('Stay Awake has its own short notification chime', () {
+      final bytes = File(
+        'android/app/src/main/res/raw/checkin_reminder.wav',
+      ).readAsBytesSync();
+      expect(String.fromCharCodes(bytes.take(4)), 'RIFF');
+      expect(String.fromCharCodes(bytes.sublist(8, 12)), 'WAVE');
+      final header = ByteData.sublistView(bytes);
+      expect(header.getUint16(20, Endian.little), 1); // Uncompressed PCM.
+      final channels = header.getUint16(22, Endian.little);
+      final rate = header.getUint32(24, Endian.little);
+      final bits = header.getUint16(34, Endian.little);
+      final duration =
+          header.getUint32(40, Endian.little) / (rate * channels * bits / 8);
+      expect(duration, inInclusiveRange(0.5, 2.0));
+      expect(bytes.skip(44).any((sample) => sample != 0), isTrue);
+    });
+
     test(
       'defaults to pulse so an alarm saved without one is still audible',
       () {

@@ -130,6 +130,7 @@ icons:
 
 alarms:
 	$(PYTHON) tool/generate_alarms.py
+	$(PYTHON) tool/generate_checkin_sound.py
 
 assets: icons alarms
 

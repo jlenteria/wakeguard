@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
@@ -17,14 +18,17 @@ import androidx.core.app.NotificationManagerCompat
 object StayAwake {
     const val GRACE_MS = 60_000L
     // Channel sound/vibration are immutable; migrate both defaults for existing installs.
-    private const val CHANNEL = "wakeguard.checkin.audible.v3"
+    private const val CHANNEL = "wakeguard.checkin.audible.v4"
     private val NOTIFICATION_VIBRATION = longArrayOf(0, 500, 300, 500)
+
+    private fun reminderSound(context: Context): Uri =
+        Uri.parse("android.resource://${context.packageName}/raw/checkin_reminder")
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(CHANNEL, "Stay Awake check-ins", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "A short sound reminds you to confirm you are still awake."
-            setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioAttributes.Builder()
+            setSound(reminderSound(context), AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
             enableVibration(true)
@@ -48,7 +52,7 @@ object StayAwake {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
         val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)
         return channel != null && channel.importance >= NotificationManager.IMPORTANCE_DEFAULT &&
-            (channel.sound != null || channel.shouldVibrate())
+            channel.sound != null
     }
 
     fun settingsIntent(context: Context): Intent =
@@ -106,7 +110,7 @@ object StayAwake {
         }
         val remainingSeconds = ((session.checkAt + GRACE_MS - System.currentTimeMillis()) / 1000L).coerceIn(1L, 60L)
         val manager = context.getSystemService(NotificationManager::class.java)
-        val sound = Settings.System.DEFAULT_NOTIFICATION_URI
+        val sound = reminderSound(context)
         createChannel(context)
         manager.notify(session.alarm.notificationId xor 0x40000000,
             NotificationCompat.Builder(context, CHANNEL)
