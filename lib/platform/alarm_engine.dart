@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/alarm.dart';
@@ -22,7 +25,11 @@ abstract class AlarmEngine {
   /// sees dismissals that happen while the Dart isolate is not running.
   Future<List<Map<String, Object?>>> history();
 
-  Future<void> dismiss(String alarmId, {required String method});
+  Future<void> dismiss(
+    String alarmId, {
+    required String method,
+    required String sessionId,
+  });
 
   Future<List<HealthCheck>> health();
 
@@ -45,6 +52,18 @@ abstract class AlarmEngine {
   Future<Map<String, Object?>> launchDetails();
 }
 
+/// Verification is a device-local result of an actual native practice scan.
+extension ObjectVerification on AlarmEngine {
+  Future<bool> objectTargetVerified(String target) async {
+    final engine = this;
+    if (engine is! MethodChannelEngine) return false;
+    return await engine._invoke<bool>('objectTargetVerified', {
+          'target': target,
+        }) ??
+        false;
+  }
+}
+
 /// Thrown for engine-level failures; deliberately not `PlatformException`, whose
 /// name the method channel already uses, making catch clauses ambiguous.
 class EngineException implements Exception {
@@ -58,14 +77,21 @@ class EngineException implements Exception {
 
 class MethodChannelEngine implements AlarmEngine {
   MethodChannelEngine({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel(channelName);
+    : _channel =
+          channel ??
+          MethodChannel(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? 'app.wakeguard/alarm'
+                : channelName,
+          );
 
-  static const channelName = 'app.wakeguard/alarm';
+  static const channelName = 'com.bling.wakeguard/alarm';
 
   final MethodChannel _channel;
 
   @override
-  Future<void> practice(Alarm alarm) => _invoke<void>('practice', alarm.toJson());
+  Future<void> practice(Alarm alarm) =>
+      _invoke<void>('practice', alarm.toJson());
 
   @override
   Future<void> clearHistory() => _invoke<void>('clearHistory');
@@ -73,7 +99,18 @@ class MethodChannelEngine implements AlarmEngine {
   /// Translates native errors once, preserving the code for the health UI.
   Future<T?> _invoke<T>(String method, [Object? arguments]) async {
     try {
-      return await _channel.invokeMethod<T>(method, arguments);
+      return await _channel
+          .invokeMethod<T>(method, arguments)
+          .timeout(
+            Duration(
+              seconds: method == 'schedule' || method == 'cancel' ? 30 : 10,
+            ),
+          );
+    } on TimeoutException {
+      throw EngineException(
+        'TIMEOUT',
+        'The alarm engine did not respond to $method. Retry when the device is responsive.',
+      );
     } on PlatformException catch (error) {
       throw EngineException(error.code, error.message ?? 'Native call failed');
     } on MissingPluginException {
@@ -135,11 +172,15 @@ class MethodChannelEngine implements AlarmEngine {
   }
 
   @override
-  Future<void> dismiss(String alarmId, {required String method}) =>
-      _invoke<void>('dismiss', {
-        'id': alarmId,
-        'method': method,
-      });
+  Future<void> dismiss(
+    String alarmId, {
+    required String method,
+    required String sessionId,
+  }) => _invoke<void>('dismiss', {
+    'id': alarmId,
+    'method': method,
+    'sessionId': sessionId,
+  });
 
   @override
   Future<List<HealthCheck>> health() async {
@@ -170,10 +211,10 @@ class MethodChannelEngine implements AlarmEngine {
       await _invoke<bool>('requestPermissions') ?? false;
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) => _invoke<void>(
-        'playAudibilitySample',
-        {if (soundPack != null) 'soundPack': soundPack.name},
-      );
+  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) =>
+      _invoke<void>('playAudibilitySample', {
+        if (soundPack != null) 'soundPack': soundPack.name,
+      });
 
   @override
   Future<void> stopAudibilitySample() => _invoke<void>('stopAudibilitySample');
@@ -184,7 +225,8 @@ class MethodChannelEngine implements AlarmEngine {
 
   @override
   Future<Map<String, Object?>> launchDetails() async {
-    final raw = await _invoke<Map<Object?, Object?>>('launchDetails') ?? const {};
+    final raw =
+        await _invoke<Map<Object?, Object?>>('launchDetails') ?? const {};
     return Map<String, Object?>.from(raw);
   }
 }
@@ -192,52 +234,63 @@ class MethodChannelEngine implements AlarmEngine {
 /// Degrades a missing native handler into a visible UI error, not a
 /// `MissingPluginException`.
 class EngineUnavailable implements AlarmEngine {
+  Never _unavailable() => throw EngineException(
+    'UNAVAILABLE',
+    'Alarms are not available on this device. No alarm has been set.',
+  );
   @override
-  Future<void> practice(Alarm alarm) async { throw EngineException('UNAVAILABLE', 'Challenge practice requires Android.'); }
-  @override
-  Future<void> clearHistory() async {}
-  @override
-  Future<void> cancel(String alarmId) async {}
+  Future<void> practice(Alarm alarm) async {
+    throw EngineException(
+      'UNAVAILABLE',
+      'Challenge practice is available on Android phones only.',
+    );
+  }
 
   @override
-  Future<List<Alarm>> nativeAlarms() async => const [];
+  Future<void> clearHistory() async => _unavailable();
+  @override
+  Future<void> cancel(String alarmId) async => _unavailable();
+
+  @override
+  Future<List<Alarm>> nativeAlarms() async => _unavailable();
 
   @override
   Future<List<Map<String, Object?>>> history() async => const [];
 
   @override
-  Future<EngineCapabilities> capabilities() async => const EngineCapabilities(
-        canLoopWhileBackgrounded: false,
-        canLockScreenTakeover: false,
-        canUseCameraInBackground: false,
-        canBypassSilentSwitch: false,
-        pendingSlotCap: 64,
-      );
+  Future<EngineCapabilities> capabilities() async => _unavailable();
 
   @override
-  Future<void> dismiss(String alarmId, {required String method}) async {}
+  Future<void> dismiss(
+    String alarmId, {
+    required String method,
+    required String sessionId,
+  }) async => _unavailable();
 
   @override
-  Future<List<HealthCheck>> health() async => const [];
+  Future<List<HealthCheck>> health() async => _unavailable();
 
   @override
   Future<Map<String, Object?>> launchDetails() async => const {};
 
   @override
-  Future<String?> openFixAction(String action) async => 'No native engine';
+  Future<String?> openFixAction(String action) async =>
+      'Alarm settings are not available on this device.';
 
   @override
   Future<bool> requestPermissions() async => false;
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async {}
+  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async =>
+      _unavailable();
 
   @override
   Future<void> stopAudibilitySample() async {}
 
   @override
-  Future<List<String>> notificationsReady() async => const [];
+  Future<List<String>> notificationsReady() async => ['engine'];
 
   @override
-  Future<void> schedule(Alarm alarm, DateTime triggerAt) async {}
+  Future<void> schedule(Alarm alarm, DateTime triggerAt) async =>
+      _unavailable();
 }

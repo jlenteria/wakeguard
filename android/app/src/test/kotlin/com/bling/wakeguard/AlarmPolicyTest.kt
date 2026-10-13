@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import org.junit.Assert.*
 import org.junit.Test

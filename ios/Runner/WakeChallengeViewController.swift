@@ -6,7 +6,7 @@ import Vision
 /// never depends on the Dart isolate; Vision/AVFoundation add zero dependencies.
 final class WakeChallengeViewController: UIViewController {
 
-    private enum Mode { case face, typed, qr }
+    private enum Mode: Hashable { case face, typed, qr }
 
     private let alarm: StoredAlarm
     private let session = AVCaptureSession()
@@ -19,11 +19,31 @@ final class WakeChallengeViewController: UIViewController {
     private var actions: [WakeAction] = []
     private var actionIndex = 0
     private var challengeComplete = false
+    private var successCloseWork: DispatchWorkItem?
 
     private let answerField = UITextField()
     private let instructionLabel = UILabel()
     private let statusLabel = UILabel()
     private let stepLabel = UILabel()
+    private let hintLabel = UILabel()
+    private let challengeProgress = UIProgressView(progressViewStyle: .default)
+    private let previewContainer = UIView()
+    private let brightnessControls = UIStackView()
+    private let brightnessContainer = UIView()
+    private let brightnessLabel = UILabel()
+    private let brightnessSlider = UISlider()
+    private let typedControls = UIStackView()
+    private let typedContainer = UIView()
+    private var modeButtons: [Mode: UIButton] = [:]
+    private var holdButton: HoldToStopButton?
+    private var confirmOverlay: UIView?
+    private var faceBrightness: CGFloat?
+    private var previousBrightness: CGFloat?
+    private var previousIdleTimerDisabled = false
+    private var analysisGeneration = 0
+
+    private let accent = UIColor(red: 1, green: 0.61, blue: 0.44, alpha: 1)
+    private let surface = UIColor(white: 0.13, alpha: 1)
 
     private var lastAnalysis = Date.distantPast
     private var cameraUnavailable = false
@@ -35,6 +55,15 @@ final class WakeChallengeViewController: UIViewController {
     private var holdStartedAt: Date?
 
     private static let analysisInterval: TimeInterval = 0.12
+    private static let successCloseDelay: TimeInterval = 5
+    // The last-resort escape is intentionally long; its length is per-alarm
+    // (StoredAlarm.effectiveHoldSeconds), defaulting to 60.
+    private var holdTitle: String {
+        let seconds = alarm.effectiveHoldSeconds
+        return seconds >= 60
+            ? String(format: NSLocalizedString("challenge.hold.minutes", comment: ""), seconds / 60)
+            : String(format: NSLocalizedString("challenge.hold.seconds", comment: ""), seconds)
+    }
 
     init(alarm: StoredAlarm) {
         self.alarm = alarm
@@ -48,69 +77,128 @@ final class WakeChallengeViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         actions = Self.pickActions(count: alarm.stepCount)
-        view.backgroundColor = .black
+        view.backgroundColor = UIColor(white: 0.065, alpha: 1)
         buildLayout()
         updateInstructions()
+        updateModeAppearance()
+        NotificationCenter.default.addObserver(self, selector: #selector(restoreBrightness), name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resumeBrightness), name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        guard !challengeComplete else { return }
+        previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        applyFaceBrightness()
         startSession()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        successCloseWork?.cancel()
+        restoreBrightness()
+        UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+        analysisGeneration += 1
         sessionQueue.async { [session] in
             if session.isRunning { session.stopRunning() }
         }
     }
 
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = previewContainer.bounds
+    }
+
     // MARK: - Layout
 
     private func buildLayout() {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.keyboardDismissMode = .onDrag
+        view.addSubview(scroll)
+        let content = UIStackView()
+        content.axis = .vertical
+        content.spacing = 16
+        content.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(content)
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20),
+            content.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 20),
+            content.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -20),
+            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
+            content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
+        ])
+        content.addArrangedSubview(label("WAKEGUARD · TIME TO WAKE UP", size: 12, color: accent))
+        content.addArrangedSubview(label(alarm.label, size: 24, color: .white))
         instructionLabel.textColor = .white
-        instructionLabel.font = .systemFont(ofSize: 30, weight: .bold)
+        instructionLabel.font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: 28, weight: .bold))
+        instructionLabel.adjustsFontForContentSizeCategory = true
         instructionLabel.numberOfLines = 0
         instructionLabel.textAlignment = .center
 
         stepLabel.textColor = .lightGray
         stepLabel.font = .systemFont(ofSize: 14)
         stepLabel.textAlignment = .center
+        stepLabel.numberOfLines = 0
+        stepLabel.adjustsFontForContentSizeCategory = true
+        hintLabel.textColor = .lightGray
+        hintLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        hintLabel.adjustsFontForContentSizeCategory = true
+        hintLabel.numberOfLines = 0
+        hintLabel.textAlignment = .center
+        challengeProgress.progressTintColor = accent
+        challengeProgress.trackTintColor = UIColor(white: 0.24, alpha: 1)
 
         statusLabel.textColor = UIColor(red: 1, green: 0.72, blue: 0.3, alpha: 1)
         statusLabel.font = .systemFont(ofSize: 15)
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
+        statusLabel.isHidden = true
 
         let stack = UIStackView(arrangedSubviews: [
             instructionLabel,
             stepLabel,
+            challengeProgress,
+            hintLabel,
             statusLabel,
         ])
         stack.axis = .vertical
         stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.layoutMargins = UIEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        stack.backgroundColor = surface
+        stack.layer.cornerRadius = 20
+        content.addArrangedSubview(stack)
 
-        let preview = UIView()
-        preview.translatesAutoresizingMaskIntoConstraints = false
-        preview.layer.cornerRadius = 20
-        preview.clipsToBounds = true
-        preview.backgroundColor = UIColor(white: 0.08, alpha: 1)
-        preview.tag = 1001
-        view.addSubview(preview)
+        previewContainer.layer.cornerRadius = 20
+        previewContainer.clipsToBounds = true
+        previewContainer.backgroundColor = .black
+        content.addArrangedSubview(previewContainer)
+        let previewHeight = previewContainer.heightAnchor.constraint(equalTo: previewContainer.widthAnchor, multiplier: 0.85)
+        previewHeight.priority = .defaultHigh
+        previewHeight.isActive = true
+
+        buildBrightnessControls()
+        pinStack(brightnessControls, in: brightnessContainer)
+        content.addArrangedSubview(brightnessContainer)
 
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
         modeRow.distribution = .fillEqually
         modeRow.spacing = 8
-        modeRow.translatesAutoresizingMaskIntoConstraints = false
         modeRow.addArrangedSubview(modeButton("Face", .face))
         modeRow.addArrangedSubview(modeButton("Type", .typed))
         if !alarm.qrValue.isEmpty {
             modeRow.addArrangedSubview(modeButton("QR", .qr))
         }
-        view.addSubview(modeRow)
+        content.addArrangedSubview(modeRow)
 
         answerField.keyboardType = .numberPad
         answerField.textColor = .white
@@ -118,66 +206,127 @@ final class WakeChallengeViewController: UIViewController {
         answerField.font = .systemFont(ofSize: 26)
         answerField.backgroundColor = UIColor(white: 0.15, alpha: 1)
         answerField.layer.cornerRadius = 10
-        answerField.isHidden = true
-        answerField.translatesAutoresizingMaskIntoConstraints = false
         answerField.accessibilityLabel = NSLocalizedString("challenge.answer.label", comment: "")
-        view.addSubview(answerField)
+        typedControls.axis = .vertical
+        typedControls.spacing = 8
+        typedContainer.isHidden = true
+        typedControls.addArrangedSubview(answerField)
+        let answerHeight = answerField.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
+        answerHeight.priority = .defaultHigh
+        answerHeight.isActive = true
 
         let confirmButton = UIButton(type: .system)
         confirmButton.setTitle(NSLocalizedString("challenge.confirm", comment: ""), for: .normal)
         confirmButton.setTitleColor(.white, for: .normal)
         confirmButton.backgroundColor = UIColor(red: 0.15, green: 0.45, blue: 0.85, alpha: 1)
         confirmButton.layer.cornerRadius = 12
-        confirmButton.isHidden = true
         confirmButton.addTarget(self, action: #selector(confirmTypedAnswer), for: .touchUpInside)
-        confirmButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(confirmButton)
+        typedControls.addArrangedSubview(confirmButton)
+        let confirmHeight = confirmButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
+        confirmHeight.priority = .defaultHigh
+        confirmHeight.isActive = true
+        pinStack(typedControls, in: typedContainer)
+        content.addArrangedSubview(typedContainer)
 
+        content.addArrangedSubview(label("Need another way?", size: 14, color: .lightGray))
         let holdButton = HoldToStopButton(
-            title: NSLocalizedString("challenge.hold", comment: ""),
-            duration: 10,
+            title: holdTitle,
+            duration: TimeInterval(alarm.effectiveHoldSeconds),
             tint: UIColor(red: 0.72, green: 0.11, blue: 0.11, alpha: 1)
         )
-        holdButton.onComplete = { [weak self] in self?.complete(method: "hold") }
-        holdButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(holdButton)
+        holdButton.onComplete = { [weak self] in self?.showConfirmStep() }
+        self.holdButton = holdButton
+        content.addArrangedSubview(holdButton)
+        holdButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
+        content.addArrangedSubview(label(NSLocalizedString("challenge.hold.body", comment: ""), size: 12, color: .lightGray))
+    }
 
+    private func label(_ text: String, size: CGFloat, color: UIColor) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size))
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.textColor = color
+        return label
+    }
+
+    /// Hide the wrapper rather than collapsing a nested stack's required spacing.
+    private func pinStack(_ stack: UIStackView, in container: UIView) {
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        let bottom = stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        bottom.priority = UILayoutPriority(999)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-
-            preview.topAnchor.constraint(equalTo: stack.bottomAnchor, constant: 16),
-            preview.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            preview.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 0.75),
-
-            modeRow.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 16),
-            modeRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            modeRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-
-            answerField.topAnchor.constraint(equalTo: modeRow.bottomAnchor, constant: 12),
-            answerField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            answerField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            answerField.heightAnchor.constraint(equalToConstant: 52),
-
-            confirmButton.topAnchor.constraint(equalTo: answerField.bottomAnchor, constant: 8),
-            confirmButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            confirmButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            confirmButton.heightAnchor.constraint(equalToConstant: 48),
-
-            holdButton.topAnchor.constraint(equalTo: confirmButton.bottomAnchor, constant: 16),
-            holdButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            holdButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            holdButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -16
-            ),
-            holdButton.heightAnchor.constraint(equalToConstant: 76),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bottom,
         ])
+    }
 
-        // The locked phone must not sleep while a challenge is on screen.
-        UIApplication.shared.isIdleTimerDisabled = true
+    private func buildBrightnessControls() {
+        brightnessControls.axis = .vertical
+        brightnessControls.spacing = 8
+        brightnessControls.isLayoutMarginsRelativeArrangement = true
+        brightnessControls.layoutMargins = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        brightnessControls.backgroundColor = surface
+        brightnessControls.layer.cornerRadius = 20
+        brightnessLabel.textColor = .white
+        brightnessLabel.numberOfLines = 0
+        brightnessLabel.textAlignment = .center
+        brightnessLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        brightnessLabel.adjustsFontForContentSizeCategory = true
+        brightnessLabel.text = NSLocalizedString("challenge.brightness.system", comment: "")
+        brightnessControls.addArrangedSubview(brightnessLabel)
+        brightnessSlider.minimumValue = 0.1
+        brightnessSlider.maximumValue = 1
+        brightnessSlider.value = Float(UIScreen.main.brightness)
+        brightnessSlider.tintColor = accent
+        brightnessSlider.accessibilityLabel = NSLocalizedString("challenge.brightness", comment: "")
+        brightnessSlider.addTarget(self, action: #selector(brightnessChanged), for: .valueChanged)
+        brightnessControls.addArrangedSubview(brightnessSlider)
+        brightnessControls.addArrangedSubview(label(NSLocalizedString("challenge.brightness.hint", comment: ""), size: 12, color: .lightGray))
+        let reset = UIButton(type: .system)
+        reset.setTitle(NSLocalizedString("challenge.brightness.reset", comment: ""), for: .normal)
+        reset.tintColor = accent
+        let resetHeight = reset.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        resetHeight.priority = .defaultHigh
+        resetHeight.isActive = true
+        reset.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            faceBrightness = nil
+            restoreBrightness()
+            brightnessSlider.value = Float(UIScreen.main.brightness)
+            brightnessLabel.text = NSLocalizedString("challenge.brightness.system", comment: "")
+        }, for: .touchUpInside)
+        brightnessControls.addArrangedSubview(reset)
+    }
+
+    @objc private func brightnessChanged() {
+        faceBrightness = CGFloat(brightnessSlider.value)
+        brightnessLabel.text = String(format: NSLocalizedString("challenge.brightness.percent", comment: ""), Int(brightnessSlider.value * 100))
+        applyFaceBrightness()
+    }
+
+    private func applyFaceBrightness() {
+        guard mode == .face, let value = faceBrightness else {
+            restoreBrightness()
+            return
+        }
+        if previousBrightness == nil { previousBrightness = UIScreen.main.brightness }
+        UIScreen.main.brightness = value
+    }
+
+    @objc private func restoreBrightness() {
+        guard let previousBrightness else { return }
+        UIScreen.main.brightness = previousBrightness
+        self.previousBrightness = nil
+    }
+
+    @objc private func resumeBrightness() {
+        if view.window != nil { applyFaceBrightness() }
     }
 
     private func modeButton(_ title: String, _ target: Mode) -> UIButton {
@@ -186,29 +335,52 @@ final class WakeChallengeViewController: UIViewController {
         button.setTitleColor(.white, for: .normal)
         button.backgroundColor = UIColor(white: 0.2, alpha: 1)
         button.layer.cornerRadius = 10
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         button.addAction(
             UIAction { [weak self] _ in self?.setMode(target) },
             for: .touchUpInside
         )
+        modeButtons[target] = button
         return button
     }
 
     // MARK: - Mode
 
     private func setMode(_ next: Mode) {
-        let cameraChangesLens = (next == .qr) != (mode == .qr)
+        analysisGeneration += 1
         mode = next
+        holdStartedAt = nil
+        eyesWereClosed = false
+        blinkCount = 0
         let typing = next == .typed
-        answerField.isHidden = !typing
-        view.viewWithTag(1001)?.isHidden = typing
+        typedContainer.isHidden = !typing
+        previewContainer.isHidden = typing
+        brightnessContainer.isHidden = next != .face
+        if !typing { view.endEditing(true) }
+        applyFaceBrightness()
+        updateModeAppearance()
         if typing {
             rollTypedChallenge()
+            sessionQueue.async { [session] in
+                if session.isRunning { session.stopRunning() }
+            }
         }
-        if cameraChangesLens {
+        if !typing {
             refitCameraInput(position(for: next))
+            startSession()
         }
         setStatus("")
         updateInstructions()
+    }
+
+    private func updateModeAppearance() {
+        for (target, button) in modeButtons {
+            let selected = target == mode
+            button.isSelected = selected
+            button.backgroundColor = selected ? accent : surface
+            button.setTitleColor(selected ? .black : .white, for: .normal)
+            button.accessibilityTraits = selected ? [.button, .selected] : .button
+        }
     }
 
     private func rollTypedChallenge() {
@@ -232,6 +404,20 @@ final class WakeChallengeViewController: UIViewController {
     }
 
     private func updateInstructions() {
+        previewContainer.isHidden = mode == .typed || cameraUnavailable
+        brightnessContainer.isHidden = mode != .face || cameraUnavailable
+        challengeProgress.isHidden = mode != .face || cameraUnavailable
+        challengeProgress.progress = actions.isEmpty ? 0 : Float(actionIndex) / Float(actions.count)
+        switch mode {
+        case .face:
+            hintLabel.text = actions.indices.contains(actionIndex)
+                ? actions[actionIndex].hint
+                : NSLocalizedString("challenge.face.hint", comment: "")
+        case .typed:
+            hintLabel.text = "Solve the question, then tap Confirm."
+        case .qr:
+            hintLabel.text = "Point the rear camera at the whole code. Hold steady in good light; scanning is automatic."
+        }
         switch mode {
         case .face:
             if cameraUnavailable {
@@ -259,7 +445,11 @@ final class WakeChallengeViewController: UIViewController {
     }
 
     private func setStatus(_ text: String) {
-        DispatchQueue.main.async { self.statusLabel.text = text }
+        DispatchQueue.main.async {
+            guard self.statusLabel.text != text else { return }
+            self.statusLabel.text = text
+            self.statusLabel.isHidden = text.isEmpty
+        }
     }
 
     // MARK: - Capture
@@ -273,6 +463,7 @@ final class WakeChallengeViewController: UIViewController {
     private func refitCameraInput(_ wanted: AVCaptureDevice.Position) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard mode != .typed, wanted == position(for: mode), !session.inputs.isEmpty else { return }
             session.beginConfiguration()
             for input in session.inputs { session.removeInput(input) }
             if let device = AVCaptureDevice.default(
@@ -281,12 +472,23 @@ final class WakeChallengeViewController: UIViewController {
                 let input = try? AVCaptureDeviceInput(device: device),
                 session.canAddInput(input) {
                 session.addInput(input)
+            } else {
+                session.commitConfiguration()
+                markCameraUnavailable()
+                return
             }
+            configureVideoConnection()
             session.commitConfiguration()
+            DispatchQueue.main.async {
+                self.cameraUnavailable = false
+                self.updatePreviewConnection()
+                self.updateInstructions()
+            }
         }
     }
 
     private func startSession() {
+        guard mode != .typed else { return }
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             configureSession()
@@ -300,8 +502,8 @@ final class WakeChallengeViewController: UIViewController {
     }
 
     private func markCameraUnavailable() {
-        cameraUnavailable = true
         DispatchQueue.main.async {
+            self.cameraUnavailable = true
             self.setStatus(NSLocalizedString("challenge.camera_denied", comment: ""))
             self.updateInstructions()
         }
@@ -310,6 +512,11 @@ final class WakeChallengeViewController: UIViewController {
     private func configureSession() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard mode != .typed else { return }
+            if !session.inputs.isEmpty {
+                if !session.isRunning { session.startRunning() }
+                return
+            }
             session.beginConfiguration()
             session.sessionPreset = .high
 
@@ -328,6 +535,7 @@ final class WakeChallengeViewController: UIViewController {
             videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
             videoOutput.alwaysDiscardsLateVideoFrames = true
             if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
+            configureVideoConnection()
 
             metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
             if session.canAddOutput(metadataOutput) {
@@ -339,28 +547,251 @@ final class WakeChallengeViewController: UIViewController {
             session.startRunning()
 
             DispatchQueue.main.async {
+                self.cameraUnavailable = false
                 let layer = AVCaptureVideoPreviewLayer(session: self.session)
                 layer.videoGravity = .resizeAspectFill
-                if let container = self.view.viewWithTag(1001) {
-                    layer.frame = container.bounds
-                    container.layer.insertSublayer(layer, at: 0)
-                }
+                layer.frame = self.previewContainer.bounds
+                self.previewLayer?.removeFromSuperlayer()
+                self.previewContainer.layer.insertSublayer(layer, at: 0)
                 self.previewLayer = layer
+                self.updatePreviewConnection()
+                self.updateInstructions()
             }
+        }
+    }
+
+    private func configureVideoConnection() {
+        guard let connection = videoOutput.connection(with: .video) else { return }
+        if connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            // Keep recognition frames unmirrored so left/right yaw stays consistent.
+            connection.isVideoMirrored = false
+        }
+    }
+
+    private func updatePreviewConnection() {
+        guard let connection = previewLayer?.connection else { return }
+        if connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            // Mirror the selfie display only; QR uses the normal rear-camera view.
+            connection.isVideoMirrored = mode == .face
         }
     }
 
     // MARK: - Completion
 
+    /// Deliberate second gesture after a finished hold: a randomly placed button so
+    /// a blind double-tap cannot stop a live alarm. Anywhere else restarts the hold.
+    private func showConfirmStep() {
+        guard confirmOverlay == nil, !challengeComplete else { return }
+        let overlay = UIView()
+        overlay.backgroundColor = UIColor(white: 0.04, alpha: 0.97)
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.accessibilityViewIsModal = true
+        view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
+        // A full-screen target behind everything catches any tap that is not the button.
+        let wrongTarget = UIButton(type: .custom)
+        wrongTarget.addTarget(self, action: #selector(onWrongHoldSpot), for: .touchUpInside)
+        wrongTarget.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(wrongTarget)
+        NSLayoutConstraint.activate([
+            wrongTarget.topAnchor.constraint(equalTo: overlay.topAnchor),
+            wrongTarget.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+            wrongTarget.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+            wrongTarget.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+        ])
+
+        let column = UIStackView(arrangedSubviews: [
+            label("HOLD COMPLETE", size: 13, color: accent),
+            label(NSLocalizedString("challenge.hold.confirm.title", comment: ""), size: 28, color: .white),
+            label(NSLocalizedString("challenge.hold.confirm.body", comment: ""), size: 14, color: .lightGray),
+        ])
+        column.axis = .vertical
+        column.spacing = 10
+        column.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(column)
+        NSLayoutConstraint.activate([
+            column.topAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.topAnchor, constant: 64),
+            column.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 24),
+            column.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -24),
+        ])
+
+        let stop = UIButton(type: .system)
+        stop.setTitle(NSLocalizedString("challenge.hold.confirm.button", comment: ""), for: .normal)
+        stop.setTitleColor(.black, for: .normal)
+        stop.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        stop.backgroundColor = accent
+        stop.layer.cornerRadius = 14
+        stop.contentEdgeInsets = UIEdgeInsets(top: 16, left: 24, bottom: 16, right: 24)
+        stop.addTarget(self, action: #selector(stopFromConfirmStep), for: .touchUpInside)
+        stop.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(stop)
+
+        // Random position: the same spot twice in a row becomes a memorised macro,
+        // so drop the button anywhere in the lower area outside the header copy.
+        let pad: CGFloat = 24
+        let header: CGFloat = 220
+        let intrinsic = stop.intrinsicContentSize
+        let buttonWidth = max(intrinsic.width, 160)
+        let buttonHeight = max(intrinsic.height, 52)
+        let insets = view.safeAreaInsets
+        let minY = insets.top + header
+        let maxY = max(view.bounds.height - insets.bottom - buttonHeight - pad, minY)
+        let maxX = max(view.bounds.width - buttonWidth - pad, pad)
+        let x = CGFloat.random(in: pad...maxX)
+        let y = CGFloat.random(in: minY...maxY)
+        NSLayoutConstraint.activate([
+            stop.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            stop.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: x),
+            stop.topAnchor.constraint(equalTo: overlay.topAnchor, constant: y),
+        ])
+
+        confirmOverlay = overlay
+    }
+
+    @objc private func stopFromConfirmStep() {
+        complete(method: "hold")
+    }
+
+    @objc private func onWrongHoldSpot() {
+        confirmOverlay?.removeFromSuperview()
+        confirmOverlay = nil
+        holdButton?.reset()
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+    }
+
     private func complete(method: String) {
         guard !challengeComplete else { return }
         challengeComplete = true
+        confirmOverlay?.removeFromSuperview()
+        confirmOverlay = nil
         sessionQueue.async { [session] in
             if session.isRunning { session.stopRunning() }
         }
-        UIApplication.shared.isIdleTimerDisabled = false
+        restoreBrightness()
         AlarmActionHandler.shared.dismissFromChallenge(alarmId: alarm.id, method: method)
-        dismiss(animated: true)
+        showSuccess()
+        let close = DispatchWorkItem { [weak self] in self?.dismiss(animated: true) }
+        successCloseWork = close
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.successCloseDelay, execute: close)
+    }
+
+    private func showSuccess() {
+        view.endEditing(true)
+        view.subviews.forEach { $0.removeFromSuperview() }
+        let successColor = UIColor(red: 0.56, green: 0.88, blue: 0.70, alpha: 1)
+        let scroll = UIScrollView()
+        let content = UIView()
+        let card = UIStackView()
+        card.axis = .vertical
+        card.alignment = .fill
+        card.spacing = 16
+        card.backgroundColor = surface
+        card.layer.cornerRadius = 28
+        card.isLayoutMarginsRelativeArrangement = true
+        card.layoutMargins = UIEdgeInsets(top: 32, left: 24, bottom: 28, right: 24)
+        for item in [scroll, content, card] { item.translatesAutoresizingMaskIntoConstraints = false }
+        view.addSubview(scroll)
+        scroll.addSubview(content)
+        content.addSubview(card)
+        let preferredWidth = card.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -48)
+        preferredWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            content.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor),
+            card.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            card.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 32),
+            card.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -32),
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
+            card.widthAnchor.constraint(lessThanOrEqualTo: content.widthAnchor, constant: -48),
+            preferredWidth,
+        ])
+        func successLabel(_ key: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
+            let result = UILabel()
+            result.text = NSLocalizedString(key, comment: "")
+            result.font = .preferredFont(forTextStyle: style)
+            result.adjustsFontForContentSizeCategory = true
+            result.textColor = color
+            result.textAlignment = .center
+            result.numberOfLines = 0
+            return result
+        }
+        card.addArrangedSubview(successLabel("challenge.success.badge", style: .caption1, color: successColor))
+        let iconContainer = UIView()
+        let icon = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+        icon.tintColor = successColor
+        icon.contentMode = .scaleAspectFit
+        icon.isAccessibilityElement = false
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.addSubview(icon)
+        NSLayoutConstraint.activate([
+            iconContainer.heightAnchor.constraint(equalToConstant: 88),
+            icon.widthAnchor.constraint(equalToConstant: 88),
+            icon.heightAnchor.constraint(equalToConstant: 88),
+            icon.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+        ])
+        card.addArrangedSubview(iconContainer)
+        let title = successLabel("challenge.success.title", style: .largeTitle, color: .white)
+        title.accessibilityTraits.insert(.header)
+        card.addArrangedSubview(title)
+        card.addArrangedSubview(successLabel("challenge.success.detail", style: .body, color: .lightGray))
+        if let quote = MotivationalQuotes.shared.next() {
+            let quoteCard = UIStackView()
+            quoteCard.axis = .vertical
+            quoteCard.isLayoutMarginsRelativeArrangement = true
+            quoteCard.layoutMargins = UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
+            quoteCard.backgroundColor = UIColor(red: 0.10, green: 0.22, blue: 0.17, alpha: 1)
+            quoteCard.layer.cornerRadius = 16
+            let quoteLabel = UILabel()
+            quoteLabel.text = "“\(quote)”"
+            quoteLabel.font = .preferredFont(forTextStyle: .title3)
+            quoteLabel.adjustsFontForContentSizeCategory = true
+            quoteLabel.numberOfLines = 0
+            quoteLabel.textAlignment = .center
+            quoteLabel.textColor = successColor
+            quoteCard.addArrangedSubview(quoteLabel)
+            card.addArrangedSubview(quoteCard)
+        }
+        let close = UIButton(type: .system)
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = NSLocalizedString("challenge.success.close", comment: "")
+        configuration.baseBackgroundColor = accent
+        configuration.baseForegroundColor = .black
+        configuration.cornerStyle = .large
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 24, bottom: 16, trailing: 24)
+        close.configuration = configuration
+        close.addAction(UIAction { [weak self] _ in
+            self?.successCloseWork?.cancel()
+            self?.dismiss(animated: true)
+        }, for: .touchUpInside)
+        card.addArrangedSubview(close)
+        card.addArrangedSubview(successLabel("challenge.success.auto_close", style: .caption1, color: .lightGray))
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        UIAccessibility.post(notification: .screenChanged, argument: title)
+        if !UIAccessibility.isReduceMotionEnabled {
+            card.alpha = 0
+            card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
+            UIView.animate(withDuration: 0.22) { card.alpha = 1; card.transform = .identity }
+        }
     }
 
     /// Random subset, always including real head/eye movement so it can't pass from bed.
@@ -389,20 +820,28 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
 
         guard mode == .face, !cameraUnavailable else { return }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let generation = analysisGeneration
 
         let request = VNDetectFaceLandmarksRequest { [weak self] request, _ in
             guard let self else { return }
-            guard let observation = (request.results as? [VNFaceObservation])?.first else {
-                setStatus(NSLocalizedString("challenge.no_face", comment: ""))
-                return
+            let observations = (request.results as? [VNFaceObservation]) ?? []
+            DispatchQueue.main.async {
+                guard !self.challengeComplete, self.mode == .face, generation == self.analysisGeneration else { return }
+                guard observations.count == 1, let observation = observations.first else {
+                    self.holdStartedAt = nil
+                    self.eyesWereClosed = false
+                    self.setStatus(NSLocalizedString(observations.isEmpty ? "challenge.no_face" : "challenge.multiple_faces", comment: ""))
+                    return
+                }
+                self.evaluate(observation)
             }
-            evaluate(observation)
         }
         request.revision = VNDetectFaceLandmarksRequestRevision3
 
         let handler = VNImageRequestHandler(
             cvPixelBuffer: pixelBuffer,
-            orientation: .leftMirrored,
+            // The output connection supplies upright portrait, unmirrored frames.
+            orientation: .up,
             options: [:]
         )
         try? handler.perform([request])
@@ -416,24 +855,37 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
         var passed = false
         switch action {
         case .blinkTwice:
-            let aperture = Self.eyeAperture(landmarks)
+            guard let aperture = Self.eyeAperture(landmarks) else {
+                eyesWereClosed = false
+                setStatus("Look straight at the camera so your eyes are visible")
+                return
+            }
             if aperture < 0.28 { eyesWereClosed = true }
             if eyesWereClosed && aperture > 0.62 {
                 blinkCount += 1
                 eyesWereClosed = false
                 passed = blinkCount >= 2
             }
+            setStatus("\(blinkCount) of 2 blinks")
 
         case .smile:
+            setStatus("Face found · Give a clear smile")
             passed = Self.smileScore(landmarks) > 0.6
 
         case .turnLeft:
-            passed = Self.headYaw(face) < -0.38
-        case .turnRight:
+            setStatus("Face found · Turn to your left")
             passed = Self.headYaw(face) > 0.38
+        case .turnRight:
+            setStatus("Face found · Turn to your right")
+            passed = Self.headYaw(face) < -0.38
 
         case .holdEyesOpen:
-            if Self.eyeAperture(landmarks) > 0.55 {
+            guard let aperture = Self.eyeAperture(landmarks) else {
+                holdStartedAt = nil
+                setStatus("Look straight at the camera so your eyes are visible")
+                return
+            }
+            if aperture > 0.55 {
                 if holdStartedAt == nil { holdStartedAt = Date() }
                 let held = Date().timeIntervalSince(holdStartedAt!)
                 setStatus(String(
@@ -443,6 +895,7 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
                 passed = held >= 5
             } else {
                 holdStartedAt = nil
+                setStatus("Open both eyes to start the 5-second check")
             }
         }
 
@@ -472,19 +925,19 @@ extension WakeChallengeViewController: AVCaptureVideoDataOutputSampleBufferDeleg
     }
 
     /// Eye height/width ratio; a closed eye collapses toward zero, unlike one point.
-    private static func eyeAperture(_ landmarks: VNFaceLandmarks?) -> CGFloat {
+    private static func eyeAperture(_ landmarks: VNFaceLandmarks?) -> CGFloat? {
         // Per-region properties need the VNFaceLandmarks2D downcast.
         guard let region = (landmarks as? VNFaceLandmarks2D)?.leftEye
-                ?? (landmarks as? VNFaceLandmarks2D)?.rightEye else { return 1 }
+                ?? (landmarks as? VNFaceLandmarks2D)?.rightEye else { return nil }
         let points = points(of: region)
-        guard points.count > 1 else { return 1 }
+        guard points.count > 1 else { return nil }
 
         let ys = points.map(\.y)
         let xs = points.map(\.x)
         guard let top = ys.min(), let bottom = ys.max(),
-              let minX = xs.min(), let maxX = xs.max() else { return 1 }
+              let minX = xs.min(), let maxX = xs.max() else { return nil }
         let width = maxX - minX
-        guard width > 0 else { return 1 }
+        guard width > 0 else { return nil }
         return abs(bottom - top) / width
     }
 
@@ -529,6 +982,21 @@ extension WakeChallengeViewController: AVCaptureMetadataOutputObjectsDelegate {
 
 enum WakeAction: CaseIterable {
     case blinkTwice, smile, turnLeft, turnRight, holdEyesOpen
+
+    var hint: String {
+        switch self {
+        case .blinkTwice:
+            return NSLocalizedString("action.blink.hint", comment: "")
+        case .smile:
+            return NSLocalizedString("action.smile.hint", comment: "")
+        case .turnLeft:
+            return NSLocalizedString("action.turn_left.hint", comment: "")
+        case .turnRight:
+            return NSLocalizedString("action.turn_right.hint", comment: "")
+        case .holdEyesOpen:
+            return NSLocalizedString("action.hold_open.hint", comment: "")
+        }
+    }
 
     var instruction: String {
         switch self {

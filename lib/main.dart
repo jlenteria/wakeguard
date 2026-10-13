@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'features/alarms/alarm_repository.dart';
@@ -14,32 +13,14 @@ void main() {
       // binding must be created in the same zone or Flutter reports a mismatch.
       WidgetsFlutterBinding.ensureInitialized();
       final repository = AlarmRepository();
-      final engine = await _resolveEngine();
-      final details = await engine.launchDetails();
-      runApp(
-        WakeGuardApp(
-          engine: engine,
-          repository: repository,
-          pendingChallenge: details,
-        ),
-      );
+      // Render immediately. The controller checks the channel and can retry it;
+      // a transient first call must not permanently select a no-op engine.
+      final engine = MethodChannelEngine();
+      runApp(WakeGuardApp(engine: engine, repository: repository));
     },
     (error, stack) {
       // Never silent: a user has an alarm depending on this process.
       debugPrint('WakeGuard fatal: $error\n$stack');
     },
   );
-}
-
-/// Falls back to [EngineUnavailable] so a partial binary still shows a usable UI.
-Future<AlarmEngine> _resolveEngine() async {
-  try {
-    await MethodChannel(MethodChannelEngine.channelName)
-        .invokeMethod<void>('capabilities');
-    return MethodChannelEngine();
-  } on MissingPluginException {
-    return EngineUnavailable();
-  } catch (_) {
-    return EngineUnavailable();
-  }
 }

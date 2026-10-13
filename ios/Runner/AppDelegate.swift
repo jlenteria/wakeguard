@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import UserNotifications
+import AudioToolbox
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -39,6 +40,9 @@ extension AppDelegate {
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    // Background notification haptics are owned by iOS; explicitly request the
+    // vibration when this delegate presents an alert while the app is active.
+    AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     completionHandler([.banner, .list, .sound])
   }
 

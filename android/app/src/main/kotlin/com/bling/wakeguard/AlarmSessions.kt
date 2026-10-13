@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.content.Context
 import android.os.Handler
@@ -119,6 +119,9 @@ object AlarmSessions {
         save(context, ringing)
         runCatching { NativeAlarmScheduler.armRecovery(context, ringing) }
             .onFailure { RingingService.postFallbackNotification(context, ringing.alarm) }
+        // Even if recovery arming failed, try playback and establish its bounded
+        // watchdogs now rather than leaving an apparently active queue stranded.
+        play(context, ringing)
     }
 
     fun invalidate(context: Context, id: String) {
@@ -137,7 +140,14 @@ object AlarmSessions {
         bootCount = currentBoot(context))
 
     fun restore(context: Context) {
-        for (session in all(context)) runCatching { when (session.phase) {
+        for (session in all(context)) runCatching {
+            if (session.alarm.needsSetup && session.phase in setOf("ringing", "snoozed", "queued")) {
+                AlarmEvents.record(context, session, "challenge_setup_required")
+                StayAwake.cancel(context, session)
+                finish(context, session)
+                return@runCatching
+            }
+            when (session.phase) {
             "checkin" -> StayAwake.restore(context, session)
             "snoozed" -> NativeAlarmScheduler.armSnooze(context, session, session.checkAt)
             "ringing" -> NativeAlarmScheduler.armRecovery(context, session)

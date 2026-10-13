@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakeguard/features/alarms/alarm_controller.dart';
 import 'package:wakeguard/features/alarms/alarm_repository.dart';
 import 'package:wakeguard/features/alarms/alarm_editor_screen.dart';
+import 'package:wakeguard/models/alarm.dart';
 import 'package:wakeguard/features/settings/settings_controller.dart';
 import 'package:wakeguard/features/shell/shell_screen.dart';
 import 'package:wakeguard/features/shell/shell_screen_view_model.dart';
@@ -11,7 +12,25 @@ import 'package:wakeguard/models/health.dart';
 import 'package:wakeguard/platform/alarm_engine.dart';
 
 class _CameraEngine extends EngineUnavailable {
+  @override
+  Future<EngineCapabilities> capabilities() async => const EngineCapabilities(
+    canLoopWhileBackgrounded: true,
+    canLockScreenTakeover: true,
+    canUseCameraInBackground: true,
+    canBypassSilentSwitch: false,
+    pendingSlotCap: null,
+  );
   bool cameraGranted = false;
+  final List<Alarm> store = [];
+
+  @override
+  Future<List<Alarm>> nativeAlarms() async => List.of(store);
+
+  @override
+  Future<void> schedule(Alarm alarm, DateTime triggerAt) async {
+    store.removeWhere((value) => value.id == alarm.id);
+    store.add(alarm);
+  }
 
   @override
   Future<List<HealthCheck>> health() async => [
@@ -81,10 +100,13 @@ void main() {
         await tester.pumpAndSettle();
         expect(shell.tab, 1);
         expect(shell.pendingCameraDraft, isNotNull);
+        await tester.scrollUntilVisible(find.text('Return to alarm'), 150);
         expect(find.text('Return to alarm'), findsOneWidget);
 
+        await tester.scrollUntilVisible(find.text('Fix'), 150);
         await tester.tap(find.text('Fix'));
         await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(find.text('Return to alarm'), -150);
         await tester.tap(find.text('Return to alarm'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Save alarm'));

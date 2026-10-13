@@ -2,20 +2,29 @@ import UIKit
 
 /// The always-available escape hatch: never disabled, since camera/sensor paths can
 /// all fail. The long hold prevents sleep-mashing on the way to another challenge.
+/// A brief lift keeps the progress earned so far; a full release restarts it.
 final class HoldToStopButton: UIButton {
 
     var onComplete: (() -> Void)?
 
     private let duration: TimeInterval
+    /// Held time already counted; survives a release for [grace].
+    private var accumulated: TimeInterval = 0
+    private var pressStarted: Date?
+    private var graceDeadline: Date?
     private var timer: Timer?
     private var progressLayer: CAShapeLayer?
-    private var startedAt: Date?
     private var didComplete = false
+    private var lastTickSecond = -1
+    private let impact = UIImpactFeedbackGenerator(style: .light)
+    private let completionHaptic = UIImpactFeedbackGenerator(style: .medium)
 
+    /// A lift shorter than this keeps the progress already earned.
+    private let grace: TimeInterval = 1.0
     private let trackColor = UIColor(white: 0.25, alpha: 1)
 
     init(title: String, duration: TimeInterval, tint: UIColor) {
-        self.duration = duration
+        self.duration = max(1, duration)
         super.init(frame: .zero)
         setTitle(title, for: .normal)
         setTitleColor(.white, for: .normal)
@@ -47,13 +56,33 @@ final class HoldToStopButton: UIButton {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        progressLayer?.frame = bounds
         progressLayer?.cornerRadius = 14
+        setProgress(accumulated / duration)
+    }
+
+    /// Restarts the button after a rejected confirm tap, keeping it the way out.
+    func reset() {
+        timer?.invalidate()
+        timer = nil
+        didComplete = false
+        isUserInteractionEnabled = true
+        accumulated = 0
+        pressStarted = nil
+        graceDeadline = nil
+        lastTickSecond = -1
+        titleLabel?.alpha = 1
+        setProgress(0)
     }
 
     @objc private func began() {
-        startedAt = Date()
+        guard !didComplete else { return }
+        if accumulated > 0, let deadline = graceDeadline, Date() > deadline {
+            accumulated = 0
+        }
+        pressStarted = Date()
         titleLabel?.alpha = 0.85
+        impact.prepare()
+        impact.impactOccurred()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
@@ -62,46 +91,55 @@ final class HoldToStopButton: UIButton {
     }
 
     private func tick() {
-        guard let startedAt else { return }
-        let elapsed = Date().timeIntervalSince(startedAt)
+        guard let pressStarted else { return }
+        let elapsed = accumulated + Date().timeIntervalSince(pressStarted)
         let fraction = min(1, elapsed / duration)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        progressLayer?.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width * fraction,
-            height: bounds.height
-        )
-        CATransaction.commit()
+        setProgress(fraction)
+        let second = Int(elapsed)
+        if second != lastTickSecond {
+            lastTickSecond = second
+            impact.impactOccurred(intensity: 0.4)
+        }
         if fraction >= 1 {
             complete()
         }
     }
 
     @objc private func ended() {
-        let heldLongEnough = startedAt
-            .map { Date().timeIntervalSince($0) >= duration } ?? false
-        reset()
-        if heldLongEnough { complete() }
+        timer?.invalidate()
+        timer = nil
+        if let started = pressStarted {
+            accumulated += Date().timeIntervalSince(started)
+        }
+        pressStarted = nil
+        graceDeadline = Date().addingTimeInterval(grace)
+        setProgress(accumulated / duration)
+        titleLabel?.alpha = 1
+        if accumulated >= duration { complete() }
     }
 
     private func complete() {
         guard !didComplete else { return }
         didComplete = true
-        onComplete?()
-        titleLabel?.alpha = 0.4
-        isUserInteractionEnabled = false
-    }
-
-    private func reset() {
         timer?.invalidate()
         timer = nil
-        startedAt = nil
-        titleLabel?.alpha = 1
+        pressStarted = nil
+        accumulated = duration
+        setProgress(1)
+        completionHaptic.impactOccurred()
+        onComplete?()
+    }
+
+    private func setProgress(_ fraction: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        progressLayer?.frame = bounds
+        let clamped = min(1, max(0, fraction))
+        progressLayer?.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: bounds.width * clamped,
+            height: bounds.height
+        )
         CATransaction.commit()
     }
 }

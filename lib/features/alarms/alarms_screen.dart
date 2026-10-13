@@ -32,80 +32,101 @@ class AlarmsScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('WakeGuard')),
       body: Column(
         children: [
-          if (viewModel.lastError != null)
-            _ErrorBar(
-              message: viewModel.lastError!,
-              onDismiss: viewModel.clearError,
-            ),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () => _refresh(context),
-              child: ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: viewModel.alarms.length + 2,
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return Column(
-                      children: [
-                        _ReadinessCard(
-                          viewModel: viewModel,
-                          onOpenHealth: onOpenHealth,
-                        ),
-                        if (dropped.isNotEmpty)
-                          _SlotWarning(count: dropped.length),
-                        if (soonest != null)
-                          _NextAlarmBanner(
-                            triggerAt: soonest,
-                            alarm: viewModel.nextAlarm,
-                          ),
-                        if (viewModel.isEmpty)
-                          const _EmptyState()
-                        else if (soonest == null)
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              viewModel.hasEnabledAlarms
-                                  ? 'No upcoming alarm scheduled. Check Health for details.'
-                                  : 'No alarms enabled. Switch one on to schedule your next wake-up.',
+              child: viewModel.isEmpty
+                  ? CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        if (viewModel.lastError != null)
+                          SliverToBoxAdapter(
+                            child: _ErrorBar(
+                              message: viewModel.lastError!,
+                              onDismiss: viewModel.clearError,
                             ),
                           ),
+                        SliverToBoxAdapter(
+                          child: _ReadinessCard(
+                            viewModel: viewModel,
+                            onOpenHealth: onOpenHealth,
+                          ),
+                        ),
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: _EmptyState(),
+                        ),
                       ],
-                    );
-                  }
-                  if (index == viewModel.alarms.length + 1) {
-                    return const SizedBox(height: 96);
-                  }
-                  final alarm = viewModel.alarms[index - 1];
-                  return _AlarmTile(
-                    alarm: alarm,
-                    busy: viewModel.isBusy(alarm.id),
-                    plannedAt: viewModel.fireTime(alarm.id),
-                    onOpen: onOpen,
-                    onToggle: (value) async {
-                      try {
-                        final cameraMissing = await viewModel.toggle(
-                          alarm,
-                          value,
-                        );
-                        if (cameraMissing) onOpenHealth?.call();
-                      } catch (error) {
-                        if (context.mounted) {
-                          showAppToast(
-                            context,
-                            kind: ToastKind.error,
-                            message: 'Could not update alarm',
-                            detail: '$error',
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: viewModel.alarms.length + 2,
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return Column(
+                            children: [
+                              if (viewModel.lastError != null)
+                                _ErrorBar(
+                                  message: viewModel.lastError!,
+                                  onDismiss: viewModel.clearError,
+                                ),
+                              _ReadinessCard(
+                                viewModel: viewModel,
+                                onOpenHealth: onOpenHealth,
+                              ),
+                              if (dropped.isNotEmpty)
+                                _SlotWarning(count: dropped.length),
+                              if (soonest != null)
+                                _NextAlarmBanner(
+                                  triggerAt: soonest,
+                                  alarm: viewModel.nextAlarm,
+                                ),
+                              if (soonest == null)
+                                Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    viewModel.hasEnabledAlarms
+                                        ? 'No upcoming alarm scheduled. Check Health for details.'
+                                        : 'No alarms enabled. Switch one on to schedule your next wake-up.',
+                                  ),
+                                ),
+                            ],
                           );
                         }
-                      }
-                    },
-                    onDelete: () => viewModel.delete(alarm),
-                    onRestore: () => viewModel.restore(alarm),
-                    onDuplicate: () => viewModel.duplicate(alarm),
-                    onSkip: () => viewModel.toggleSkip(alarm),
-                  );
-                },
-              ),
+                        if (index == viewModel.alarms.length + 1) {
+                          return const SizedBox(height: 96);
+                        }
+                        final alarm = viewModel.alarms[index - 1];
+                        return _AlarmTile(
+                          alarm: alarm,
+                          busy: viewModel.isBusy(alarm.id),
+                          plannedAt: viewModel.fireTime(alarm.id),
+                          onOpen: onOpen,
+                          onToggle: (value) async {
+                            try {
+                              final cameraMissing = await viewModel.toggle(
+                                alarm,
+                                value,
+                              );
+                              if (cameraMissing) onOpenHealth?.call();
+                            } catch (error) {
+                              if (context.mounted) {
+                                showAppToast(
+                                  context,
+                                  kind: ToastKind.error,
+                                  message: 'Could not update alarm',
+                                  detail: '$error',
+                                );
+                              }
+                            }
+                          },
+                          onDelete: () => viewModel.delete(alarm),
+                          onRestore: () => viewModel.restore(alarm),
+                          onDuplicate: () => viewModel.duplicate(alarm),
+                          onSkip: () => viewModel.toggleSkip(alarm),
+                        );
+                      },
+                    ),
             ),
           ),
         ],
@@ -141,27 +162,25 @@ class _ReadinessCard extends StatelessWidget {
     final warnings = viewModel.warnings;
     final ready =
         blocking.isEmpty && warnings.isEmpty && viewModel.readinessKnown;
+    // The all-clear card is noise on every visit; only surface trouble here.
+    if (ready) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: ListTile(
         leading: Icon(
-          ready ? Icons.check_circle_outline : Icons.error_outline,
+          Icons.error_outline,
           color: blocking.isNotEmpty ? scheme.error : scheme.primary,
         ),
         trailing: const Icon(Icons.chevron_right),
         title: Text(
           !viewModel.readinessKnown
               ? 'Readiness unavailable'
-              : ready
-              ? 'Alarm settings ready'
               : 'Your alarm needs attention',
         ),
         subtitle: Text(
           !viewModel.readinessKnown
               ? 'Open Health to check your settings.'
-              : ready
-              ? 'Practice your challenge and test the sound before your first morning.'
               : [...blocking, ...warnings].map((c) => c.label).join(', '),
         ),
         onTap: onOpenHealth,
@@ -253,9 +272,9 @@ class _SlotWarning extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '$count alarm(s) exceed this platform\'s pending notification '
-                'budget and will NOT ring. Disable or delete some alarms '
-                '(swipe left to delete).',
+                '$count ${count == 1 ? 'alarm cannot' : 'alarms cannot'} be scheduled '
+                'because your device’s reminder limit has been reached. '
+                'Turn off or delete some alarms to make room.',
               ),
             ),
           ],
@@ -345,7 +364,9 @@ class _AlarmTile extends StatelessWidget {
                 '${alarm.label.isEmpty ? 'Alarm' : alarm.label} · ${_repeatSummary(alarm)}',
               ),
               Text(
-                !alarm.enabled
+                alarm.needsSetup
+                    ? 'Setup required · open to choose and practice the new challenge'
+                    : !alarm.enabled
                     ? 'Off'
                     : plannedAt != null
                     ? 'Rings ${_relative(plannedAt!)}'
@@ -364,7 +385,7 @@ class _AlarmTile extends StatelessWidget {
                 ),
               if (alarm.skipUntilMillis > DateTime.now().millisecondsSinceEpoch)
                 Text(
-                  'Next occurrence skipped',
+                  'Next alarm skipped',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
             ],
@@ -380,7 +401,9 @@ class _AlarmTile extends StatelessWidget {
                 ),
               Switch(
                 value: alarm.enabled,
-                onChanged: busy ? null : (value) => onToggle(value),
+                onChanged: busy || alarm.needsSetup
+                    ? null
+                    : (value) => onToggle(value),
               ),
               PopupMenuButton<String>(
                 tooltip: 'Alarm actions',
@@ -422,8 +445,8 @@ class _AlarmTile extends StatelessWidget {
                       child: Text(
                         alarm.skipUntilMillis >
                                 DateTime.now().millisecondsSinceEpoch
-                            ? 'Restore skipped occurrence'
-                            : 'Skip next occurrence',
+                            ? 'Undo skip'
+                            : 'Skip next alarm',
                       ),
                     ),
                 ],
@@ -435,7 +458,7 @@ class _AlarmTile extends StatelessWidget {
     );
   }
 
-  /// "Face, Pattern" — what the alarm asks for, so a restricted set is visible.
+  /// Selected challenges only; legacy labels remain in History, not this list.
   static String _escapeSummary(Alarm alarm) => EscapeKind.values
       .where(alarm.escapes.contains)
       .map((escape) => escape.label)

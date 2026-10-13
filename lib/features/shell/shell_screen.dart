@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/alarm.dart';
 import '../challenges/wake_up_qr.dart';
 import '../alarms/alarm_editor_screen.dart';
+import '../alarms/alarm_controller.dart';
 import '../alarms/alarms_screen.dart';
 import '../alarms/alarms_screen_view_model.dart';
 import '../health/health_screen.dart';
@@ -56,54 +57,68 @@ class ShellScreen extends StatelessWidget {
             )
           : IndexedStack(
               index: viewModel.tab,
-              children: [
-                ViewModelProvider<AlarmsScreenViewModel>(
-                  create: (_) => AlarmsScreenViewModel(viewModel.controller),
-                  builder: (_, vm) => AlarmsScreen(
-                    viewModel: vm,
-                    onOpenHealth: viewModel.openHealth,
-                    onOpen: (alarm) =>
-                        _openEditor(context, viewModel, existing: alarm),
-                  ),
-                ),
-                ViewModelProvider<HealthScreenViewModel>(
-                  create: (_) => HealthScreenViewModel(viewModel.controller),
-                  builder: (_, vm) => HealthScreen(
-                    viewModel: vm,
-                    // Shown whenever Health was reached from the alarm flow, even
-                    // without a draft: the user should be able to get back.
-                    onReturnToAlarm:
-                        viewModel.pendingCameraDraft == null &&
-                            !viewModel.cameFromAlarm
-                        ? null
-                        : () {
-                            final draft = viewModel.pendingCameraDraft;
-                            if (draft == null) {
-                              viewModel.selectTab(0);
-                            } else {
-                              unawaited(
-                                _openEditor(
-                                  context,
-                                  viewModel,
-                                  existing: draft,
-                                ),
-                              );
-                            }
-                          },
-                  ),
-                ),
-                ViewModelProvider<HistoryScreenViewModel>(
-                  create: (_) => HistoryScreenViewModel(viewModel.controller),
-                  builder: (_, vm) => HistoryScreen(viewModel: vm),
-                ),
-                ViewModelProvider<SettingsScreenViewModel>(
-                  create: (_) => SettingsScreenViewModel(
-                    viewModel.controller,
-                    viewModel.settings,
-                  ),
-                  builder: (_, vm) => SettingsScreen(viewModel: vm),
-                ),
-              ],
+              children:
+                  <Widget>[
+                        ViewModelProvider<AlarmsScreenViewModel>(
+                          create: (_) =>
+                              AlarmsScreenViewModel(viewModel.controller),
+                          builder: (_, vm) => AlarmsScreen(
+                            viewModel: vm,
+                            onOpenHealth: viewModel.openHealth,
+                            onOpen: (alarm) => _openEditor(
+                              context,
+                              viewModel,
+                              existing: alarm,
+                            ),
+                          ),
+                        ),
+                        ViewModelProvider<HealthScreenViewModel>(
+                          create: (_) =>
+                              HealthScreenViewModel(viewModel.controller),
+                          builder: (_, vm) => HealthScreen(
+                            viewModel: vm,
+                            // Shown whenever Health was reached from the alarm flow, even
+                            // without a draft: the user should be able to get back.
+                            onReturnToAlarm:
+                                viewModel.pendingCameraDraft == null &&
+                                    !viewModel.cameFromAlarm
+                                ? null
+                                : () {
+                                    final draft = viewModel.pendingCameraDraft;
+                                    if (draft == null) {
+                                      viewModel.selectTab(0);
+                                    } else {
+                                      unawaited(
+                                        _openEditor(
+                                          context,
+                                          viewModel,
+                                          existing: draft,
+                                        ),
+                                      );
+                                    }
+                                  },
+                          ),
+                        ),
+                        ViewModelProvider<HistoryScreenViewModel>(
+                          create: (_) =>
+                              HistoryScreenViewModel(viewModel.controller),
+                          builder: (_, vm) => HistoryScreen(viewModel: vm),
+                        ),
+                        ViewModelProvider<SettingsScreenViewModel>(
+                          create: (_) => SettingsScreenViewModel(
+                            viewModel.controller,
+                            viewModel.settings,
+                          ),
+                          builder: (_, vm) => SettingsScreen(viewModel: vm),
+                        ),
+                      ].indexed
+                      .map(
+                        (entry) => _LazyTab(
+                          active: viewModel.tab == entry.$1,
+                          child: entry.$2,
+                        ),
+                      )
+                      .toList(),
             ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: viewModel.tab,
@@ -132,12 +147,16 @@ class ShellScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: viewModel.tab == 0
-          ? FloatingActionButton.extended(
-              onPressed: viewModel.editorOpen
-                  ? null
-                  : () => _openEditor(context, viewModel),
-              icon: const Icon(Icons.alarm_add),
-              label: const Text('Add alarm'),
+          ? ValueListenableBuilder<bool>(
+              valueListenable: viewModel.editorOpenListenable,
+              builder: (context, editorOpen, _) =>
+                  FloatingActionButton.extended(
+                    onPressed: editorOpen
+                        ? null
+                        : () => _openEditor(context, viewModel),
+                    icon: const Icon(Icons.alarm_add),
+                    label: const Text('Add alarm'),
+                  ),
             )
           : null,
     );
@@ -162,29 +181,33 @@ class ShellScreen extends StatelessWidget {
     Alarm? existing,
   }) async {
     final controller = viewModel.controller;
-    String sharedQr;
-    try {
-      final codes = controller.alarms
-          .map((a) => a.qrValue.trim())
-          .where((code) => code.isNotEmpty);
-      sharedQr = await WakeUpQrRepository().getOrCreate(
-        preferredValue: codes.isEmpty ? null : codes.first,
-      );
-    } catch (error) {
-      if (context.mounted) {
-        showAppToast(
-          context,
-          kind: ToastKind.error,
-          message: 'Could not load wake-up QR',
-          detail: '$error',
+    // Reuse an already-loaded QR value without another storage read.
+    var sharedQr = WakeUpQrRepository.cached;
+    if (sharedQr == null) {
+      try {
+        final codes = controller.alarms
+            .map((a) => a.qrValue.trim())
+            .where((code) => code.isNotEmpty);
+        sharedQr = await WakeUpQrRepository().getOrCreate(
+          preferredValue: codes.isEmpty ? null : codes.first,
         );
+      } catch (error) {
+        if (context.mounted) {
+          showAppToast(
+            context,
+            kind: ToastKind.error,
+            message: 'Could not load wake-up QR',
+            detail: '$error',
+          );
+        }
+        return;
       }
-      return;
     }
     if (!context.mounted) return;
     final draft = await showModalBottomSheet<Alarm>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (_) => AlarmEditor(
         engine: viewModel.engine,
@@ -200,7 +223,7 @@ class ShellScreen extends StatelessWidget {
     // Re-check right now: the user may have just fixed (or revoked) something.
     await controller.refreshHealth();
     if (!context.mounted) return;
-    if (controller.cameraPermissionMissingFor(draft)) {
+    if (draft.enabled && controller.cameraPermissionMissingFor(draft)) {
       viewModel.setPendingCameraDraft(draft);
       viewModel.openHealth();
       showAppToast(
@@ -213,10 +236,15 @@ class ShellScreen extends StatelessWidget {
       return;
     }
     final unresolved = controller.unresolvedChecks;
-    if (unresolved.isNotEmpty) {
+    if (draft.enabled && unresolved.isNotEmpty) {
       // Keep the draft (stored off until checks pass): discarding an alarm is worse.
-      await controller.upsert(draft.copyWith(enabled: false));
+      final result = await controller.upsert(draft.copyWith(enabled: false));
       if (!context.mounted) return;
+      if (!result.saved) {
+        _reportSaveFailure(context, viewModel, draft, result);
+        return;
+      }
+      viewModel.setPendingCameraDraft(null);
       viewModel.openHealth();
       showAppToast(
         context,
@@ -229,26 +257,60 @@ class ShellScreen extends StatelessWidget {
       );
       return;
     }
-    await controller.upsert(draft);
+    final result = await controller.upsert(draft);
     if (!context.mounted) return;
-    final error = controller.lastError;
-    if (error == null) {
-      viewModel.setPendingCameraDraft(null);
-      viewModel.selectTab(0);
+    if (!result.saved) {
+      _reportSaveFailure(context, viewModel, draft, result);
+      return;
     }
+    viewModel.setPendingCameraDraft(null);
+    viewModel.selectTab(0);
     final at = controller.nextFireTime(draft.id);
-    final message =
-        error ??
-        (!draft.enabled
-            ? 'Saved, switched off.'
-            : at == null
-            ? 'Saved. Check alarm readiness.'
-            : 'Next alarm: ${MaterialLocalizations.of(context).formatMediumDate(at)} at ${TimeOfDay.fromDateTime(at).format(context)}');
+    final message = (!draft.enabled
+        ? 'Saved, switched off.'
+        : at == null
+        ? 'Saved. Check alarm readiness.'
+        : 'Next alarm: ${MaterialLocalizations.of(context).formatMediumDate(at)} at ${TimeOfDay.fromDateTime(at).format(context)}');
+    showAppToast(context, kind: ToastKind.success, message: message);
+  }
+
+  void _reportSaveFailure(
+    BuildContext context,
+    ShellScreenViewModel viewModel,
+    Alarm draft,
+    AlarmSaveResult result,
+  ) {
+    viewModel.setPendingCameraDraft(draft);
+    viewModel.openHealth();
     showAppToast(
       context,
-      kind: error == null ? ToastKind.success : ToastKind.error,
-      message: message,
+      kind: ToastKind.error,
+      message: 'Alarm not saved',
+      detail:
+          '${result.error} Your draft is retained. After fixing the problem, tap Return to alarm.',
+      duration: const Duration(seconds: 8),
     );
+  }
+}
+
+/// Build each tab on its first visit and retain its state afterwards.
+class _LazyTab extends StatefulWidget {
+  const _LazyTab({required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_LazyTab> createState() => _LazyTabState();
+}
+
+class _LazyTabState extends State<_LazyTab> {
+  bool _visited = false;
+
+  @override
+  Widget build(BuildContext context) {
+    _visited = _visited || widget.active;
+    return _visited ? widget.child : const SizedBox.shrink();
   }
 }
 

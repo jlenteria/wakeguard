@@ -5,6 +5,7 @@ import '../../shared/toast.dart';
 import '../challenges/qr_sheet.dart';
 import '../support/support_screen.dart';
 import 'settings_screen_view_model.dart';
+import 'privacy_policy_screen.dart';
 
 /// App-wide preferences, wake-up QR, package information and optional support.
 class SettingsScreen extends StatelessWidget {
@@ -32,14 +33,14 @@ class SettingsScreen extends StatelessWidget {
               ],
               selected: {settings.themeMode},
               onSelectionChanged: (value) =>
-                  viewModel.update(settings.copyWith(themeMode: value.first)),
+                  _update(context, settings.copyWith(themeMode: value.first)),
             ),
           ),
           _Section(
             title: 'Alarm defaults',
             subtitle:
-                'Applied to alarms you create from now on. Each alarm '
-                'can override it, including switching snooze off entirely.',
+                'Choose the snooze time for new alarms. You can change it '
+                'or turn snooze off for each alarm.',
             child: Wrap(
               spacing: 8,
               children: [
@@ -47,7 +48,8 @@ class SettingsScreen extends StatelessWidget {
                   ChoiceChip(
                     label: Text(SettingsScreenViewModel.snoozeLabel(minutes)),
                     selected: settings.defaultSnoozeMinutes == minutes,
-                    onSelected: (_) => viewModel.update(
+                    onSelected: (_) => _update(
+                      context,
                       settings.copyWith(defaultSnoozeMinutes: minutes),
                     ),
                   ),
@@ -111,12 +113,24 @@ class SettingsScreen extends StatelessWidget {
                 Text(
                   'Start your morning with purpose. WakeGuard combines offline '
                   'alarms, wake-up challenges and optional Stay Awake check-ins.\n\n'
-                  'Free. No ads, accounts or tracking. Your alarms and history '
+                  'Free. No ads or accounts. Your alarms and history '
                   'stay on your device. Camera challenges run on-device; '
-                  'images are never saved or uploaded.',
+                  'images are never saved or uploaded by WakeGuard. '
+                  'The Privacy policy explains what app tools may send for troubleshooting.',
                   style: text.bodySmall,
                 ),
               ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('How your data and camera images are handled'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PrivacyPolicyScreen(),
+              ),
             ),
           ),
           ListTile(
@@ -133,6 +147,20 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _update(BuildContext context, AppSettings next) async {
+    try {
+      await viewModel.update(next);
+    } catch (error) {
+      if (!context.mounted) return;
+      showAppToast(
+        context,
+        kind: ToastKind.error,
+        message: 'Settings not saved',
+        detail: '$error',
+      );
+    }
   }
 }
 

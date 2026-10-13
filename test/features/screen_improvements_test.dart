@@ -19,6 +19,14 @@ import 'package:wakeguard/models/health.dart';
 import 'package:wakeguard/platform/alarm_engine.dart';
 
 class _Engine extends EngineUnavailable {
+  @override
+  Future<EngineCapabilities> capabilities() async => const EngineCapabilities(
+    canLoopWhileBackgrounded: true,
+    canLockScreenTakeover: true,
+    canUseCameraInBackground: true,
+    canBypassSilentSwitch: false,
+    pendingSlotCap: null,
+  );
   List<Alarm> store = [];
   List<Map<String, Object?>> events = [];
   Completer<void>? scheduleGate;
@@ -96,7 +104,7 @@ void main() {
             minute: 0,
             label: 'Morning',
             enabled: false,
-            escapes: const {EscapeKind.pattern},
+            escapes: const {EscapeKind.tap},
           ),
         ],
       );
@@ -126,7 +134,7 @@ void main() {
           hour: 7,
           minute: 0,
           label: 'Morning',
-          escapes: const {EscapeKind.pattern},
+          escapes: const {EscapeKind.tap},
         ),
       ],
     );
@@ -152,7 +160,7 @@ void main() {
           hour: 7,
           minute: 0,
           label: 'Work',
-          escapes: const {EscapeKind.pattern},
+          escapes: const {EscapeKind.tap},
         ),
       ],
     );
@@ -172,6 +180,9 @@ void main() {
     'history sorts and groups dates, names challenges, preserves data on refresh failure',
     (tester) async {
       await initialize();
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day, 8);
       final yesterday = DateTime(now.year, now.month, now.day - 1, 8);
@@ -208,7 +219,7 @@ void main() {
       );
       expect(find.textContaining('Face challenge'), findsOneWidget);
       engine.failHistory = true;
-      await tester.tap(find.byTooltip('Refresh history'));
+      await tester.drag(find.byType(ListView), const Offset(0, 400));
       await tester.pumpAndSettle();
       expect(find.text('Could not refresh history'), findsOneWidget);
       expect(vm.entries, hasLength(2));
@@ -221,7 +232,7 @@ void main() {
       await initialize();
       PackageInfo.setMockInitialValues(
         appName: 'WakeGuard',
-        packageName: 'app.wakeguard',
+        packageName: 'com.bling.wakeguard',
         version: '1.2.3',
         buildNumber: '42',
         buildSignature: '',

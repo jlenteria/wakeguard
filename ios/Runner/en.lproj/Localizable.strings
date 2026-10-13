@@ -8,6 +8,7 @@
 */
 
 /* Notification actions */
+"notification.action.snooze" = "Snooze";
 "notification.action.awake" = "I'm awake";
 "notification.action.confirm" = "Type to confirm";
 "notification.action.confirm.send" = "Confirm";
@@ -19,8 +20,14 @@
 "challenge.type_instruction" = "Type the answer";
 "challenge.no_camera" = "No camera needed";
 "challenge.confirm" = "Confirm";
-"challenge.hold" = "Hold 10 seconds to stop";
-"challenge.hold.hint" = "Press and hold for ten seconds";
+"challenge.hold" = "Hold 1 minute to stop";
+"challenge.hold.minutes" = "Hold %d minute to stop";
+"challenge.hold.seconds" = "Hold %d seconds to stop";
+"challenge.hold.hint" = "Press and hold without lifting your finger to stop the alarm";
+"challenge.hold.body" = "Lifting your finger for a moment keeps the hold; a full release restarts it.";
+"challenge.hold.confirm.title" = "Confirm you are awake";
+"challenge.hold.confirm.body" = "Hold complete. Tap the button to stop the alarm. Touching anywhere else restarts the hold.";
+"challenge.hold.confirm.button" = "Tap to stop";
 "challenge.answer.label" = "Answer";
 "challenge.step" = "Step %d of %d";
 "challenge.enter_first" = "Enter an answer first.";
@@ -28,33 +35,50 @@
 "challenge.camera_unavailable" = "Camera unavailable";
 "challenge.camera_denied" = "Camera access is off, so face and QR checks are unavailable. Typed and hold-to-stop still work.";
 "challenge.use_type" = "Use Type or Hold to stop";
-"challenge.no_face" = "No face detected";
-"challenge.keep_open" = "Keep your eyes open — %d";
-"challenge.wrong_code" = "That's not the right code.";
-"challenge.qr_instruction" = "Scan the code away from bed";
-"challenge.get_up" = "You will have to get up";
+"challenge.no_face" = "Center your face in the preview. If it is dark, raise the screen brightness below.";
+"challenge.multiple_faces" = "More than one face. Only one person, please.";
+"challenge.brightness" = "Screen brightness";
+"challenge.brightness.system" = "Screen brightness · System";
+"challenge.brightness.percent" = "Screen brightness · %d%%";
+"challenge.brightness.hint" = "Adjust for this face challenge only. Your usual brightness returns when you leave.";
+"challenge.brightness.reset" = "Use system brightness";
+"challenge.face.hint" = "Hold the phone at eye level. The preview acts like a mirror. Keep your whole face in view.";
+"challenge.keep_open" = "Keep both eyes open · %d seconds left";
+"challenge.wrong_code" = "Different code. Use the wake-up QR saved for this alarm.";
+"challenge.qr_instruction" = "Scan your wake-up QR";
+"challenge.get_up" = "Use the code saved for this alarm";
+"challenge.success.badge" = "WAKE CHECK COMPLETE";
+"challenge.success.title" = "You're ready";
+"challenge.success.detail" = "Alarm stopped. Have a good morning.";
+"challenge.success.close" = "Close";
+"challenge.success.auto_close" = "Closes automatically in 5 seconds";
 
 /* Face actions */
 "action.blink" = "Blink twice";
 "action.smile" = "Smile";
 "action.turn_left" = "Turn your head left";
 "action.turn_right" = "Turn your head right";
-"action.hold_open" = "Keep your eyes open for 5 seconds";
+"action.hold_open" = "Keep both eyes open for 5 seconds";
+"action.blink.hint" = "Look straight at the camera. Slowly close and reopen both eyes twice.";
+"action.smile.hint" = "Look straight at the camera and give a clear smile. Keep your whole face in view.";
+"action.turn_left.hint" = "The preview works like a mirror. Keep the phone still and turn toward your own left shoulder.";
+"action.turn_right.hint" = "The preview works like a mirror. Keep the phone still and turn toward your own right shoulder.";
+"action.hold_open.hint" = "Look straight at the camera. Keep both eyes open until the countdown ends; closing them restarts it.";
 
 /* Health */
 "health.notifications" = "Notifications";
-"health.notifications.ok" = "Alarms are allowed to be delivered.";
-"health.notifications.bad" = "Notifications are blocked. Alarms cannot fire.";
+"health.notifications.ok" = "WakeGuard is allowed to send alarm notifications. Check that Sounds is also on in your iPhone’s notification settings.";
+"health.notifications.bad" = "Allow WakeGuard notifications in Settings > Notifications > WakeGuard to receive alarms.";
 "health.time_sensitive" = "Time Sensitive";
-"health.time_sensitive.ok" = "Alarms can break through Do Not Disturb.";
-"health.time_sensitive.bad" = "Time Sensitive delivery is off, so Do Not Disturb and Focus can silence alarms.";
+"health.time_sensitive.ok" = "Time Sensitive Notifications are on. Allow them in any Focus you use overnight so alarm reminders can reach you.";
+"health.time_sensitive.bad" = "Turn on Time Sensitive Notifications for WakeGuard and allow them in your overnight Focus.";
 "health.focus" = "Focus modes";
-"health.focus.ok" = "Add WakeGuard in Settings > Focus so a scheduled Focus cannot silence the alarm.";
+"health.focus.ok" = "In Settings > Focus, allow WakeGuard in any Focus you use overnight. WakeGuard cannot check these settings for you.";
 "health.critical" = "Critical Alerts";
-"health.critical.ok" = "Granted. Alarms can sound even with the ringer switched off.";
-"health.critical.bad" = "Not granted. The ringer switch will silence alarms.";
-"health.budget" = "Notification slots";
-"health.budget.ok" = "%d of %d slots in use.";
-"health.budget.bad" = "%d of %d usable slots in use. Some later alarms will not fire.";
-"health.silent" = "Ringer switch";
-"health.silent.ok" = "Keep the side switch on: iOS mutes non-critical alerts when it is silenced.";
+"health.critical.ok" = "Critical Alerts support is available. Allow Critical Alerts for WakeGuard in your iPhone’s notification settings to hear alarms in Silent mode.";
+"health.critical.bad" = "Critical Alerts support is not available. Keep Silent mode off so you can hear alarm notifications.";
+"health.budget" = "Scheduled reminders";
+"health.budget.ok" = "%d of %d reminders scheduled. Each alarm may use several reminders.";
+"health.budget.bad" = "%d reminders scheduled; WakeGuard has room for %d. Turn off or delete some alarms so later ones can be scheduled.";
+"health.silent" = "Silent mode";
+"health.silent.ok" = "Check that Silent mode is off on your iPhone unless you have allowed Critical Alerts for WakeGuard.";

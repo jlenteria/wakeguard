@@ -1,0 +1,6 @@
+# Copy to android/key.properties (gitignored). Never commit signing credentials.
+# Relative paths are resolved from android/; an absolute keystore path also works.
+storeFile=app/upload-keystore.jks
+keyAlias=upload
+storePassword=REPLACE_WITH_YOUR_STORE_PASSWORD
+keyPassword=REPLACE_WITH_YOUR_KEY_PASSWORD

@@ -29,7 +29,8 @@ enum NotificationCategories {
 
         let category = UNNotificationCategory(
             identifier: alarmCategory,
-            actions: [confirm, openChallenge, snooze],
+            // Put Snooze first so compact action presentations can expose it.
+            actions: [snooze, openChallenge, confirm],
             intentIdentifiers: [],
             // The user must be able to see and act on this from the lock screen.
             options: [.customDismissAction]

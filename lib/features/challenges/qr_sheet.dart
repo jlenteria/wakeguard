@@ -72,7 +72,7 @@ class QrSheetScreen extends StatelessWidget {
                         ),
                         SizedBox(height: 8),
                         Text(
-                          'Could not render this code.\nType it in instead.',
+                          'Could not show this QR code.\nTry a shorter code value in the alarm editor.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.black87),
                         ),
@@ -90,7 +90,8 @@ class QrSheetScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'If the code will not scan, type it in instead.',
+              'Print this code or show it on another device away from bed. '
+              'If it will not scan, improve the lighting and keep the whole code in view.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

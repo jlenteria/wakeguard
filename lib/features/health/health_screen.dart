@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/health.dart';
 import '../../shared/toast.dart';
+import '../../shared/device_guidance.dart';
 import 'health_screen_view_model.dart';
 
 /// The screen addressing the core problem: alarms silently failing due to OS settings.
@@ -20,22 +21,7 @@ class HealthScreen extends StatelessWidget {
     final capabilities = viewModel.capabilities;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Alarm health'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh checks',
-            onPressed: viewModel.refreshing ? null : () => _refresh(context),
-            icon: viewModel.refreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Alarm health')),
       body: RefreshIndicator(
         onRefresh: () => _refresh(context),
         child: ListView(
@@ -65,10 +51,8 @@ class HealthScreen extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Listen for the alarm tone at your current volume. '
-                        'The test stops after 10 seconds. On iOS, a foreground '
-                        'test does not verify locked-screen or silent-mode delivery.',
+                      Text(
+                        DeviceGuidance.soundTest(Theme.of(context).platform),
                       ),
                       const SizedBox(height: 12),
                       if (viewModel.playing) ...[
@@ -86,9 +70,7 @@ class HealthScreen extends StatelessWidget {
                           viewModel.playing ? Icons.stop : Icons.volume_up,
                         ),
                         label: Text(
-                          viewModel.playing
-                              ? 'Stop test'
-                              : 'Play audibility test',
+                          viewModel.playing ? 'Stop test' : 'Test alarm sound',
                         ),
                         onPressed: () => _soundTest(context),
                       ),
@@ -162,12 +144,12 @@ class _ReadinessSummary extends StatelessWidget {
         ? 'Required checks passed'
         : '$count ${count == 1 ? 'setting needs' : 'settings need'} attention';
     final detail = unavailable
-        ? 'Refresh to check your alarm settings.'
+        ? 'Pull down to check your alarm settings again.'
         : viewModel.blocking.isNotEmpty
         ? 'Fix the required settings below before relying on your alarm.'
         : count > 0
         ? 'Review the warnings below, then test the sound.'
-        : 'Your reported settings are clear. Test the sound before relying on an alarm.';
+        : 'These settings look ready. Test the sound and try an alarm with your phone locked.';
     final color = viewModel.blocking.isNotEmpty
         ? scheme.errorContainer
         : scheme.secondaryContainer;
@@ -269,7 +251,7 @@ class _HealthTile extends StatelessWidget {
                             failure ??
                             (resolved
                                 ? check.label
-                                : 'Complete the permission or settings change, then refresh.'),
+                                : 'Finish changing the setting, then pull down to check again.'),
                         duration: const Duration(seconds: 5),
                       );
                     },
@@ -289,11 +271,19 @@ class _CapabilityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = <(String, bool)>[
-      ('Loop until dismissed', capabilities.canLoopWhileBackgrounded),
-      ('Take over the lock screen', capabilities.canLockScreenTakeover),
-      ('Camera challenge in background', capabilities.canUseCameraInBackground),
-      ('Sound through silent mode', capabilities.canBypassSilentSwitch),
-      ('No pending notification limit', !capabilities.hasPendingSlotCap),
+      (
+        'Keep ringing while the app is closed',
+        capabilities.canLoopWhileBackgrounded,
+      ),
+      (
+        'Show the challenge on the lock screen',
+        capabilities.canLockScreenTakeover,
+      ),
+      (
+        'Use a camera challenge from the lock screen',
+        capabilities.canUseCameraInBackground,
+      ),
+      ('Play alarm sounds in Silent mode', capabilities.canBypassSilentSwitch),
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -304,7 +294,7 @@ class _CapabilityCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'This platform can',
+                'Alarm features on this device',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               const SizedBox(height: 12),
@@ -334,19 +324,16 @@ class _CapabilityCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'iOS keeps only the soonest '
-                    '${capabilities.pendingSlotCap} scheduled notifications and '
-                    'discards the rest silently.',
+                    'Your device can keep up to ${capabilities.pendingSlotCap} '
+                    'alarm reminders scheduled at once. Each alarm may use '
+                    'several reminders. WakeGuard schedules the soonest ones first.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 12),
                 child: Text(
-                  'Silent-mode support does not guarantee sound through '
-                  'Do Not Disturb or Focus. Check those settings and your alarm volume. '
-                  'If alarms are delayed, review battery or background activity restrictions '
-                  'in your phone settings. Available options vary by device.',
+                  DeviceGuidance.deliveryAdvice(Theme.of(context).platform),
                   style: TextStyle(fontSize: 12),
                 ),
               ),

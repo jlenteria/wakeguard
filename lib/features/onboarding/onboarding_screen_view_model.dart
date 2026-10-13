@@ -1,5 +1,6 @@
 import '../alarms/alarm_controller.dart';
 import '../../shared/view_model.dart';
+import '../../models/health.dart';
 
 /// First-run state: the three settings that decide whether an alarm rings.
 class OnboardingScreenViewModel extends ViewModel {
@@ -14,8 +15,9 @@ class OnboardingScreenViewModel extends ViewModel {
   bool _finishing = false;
   bool get finishing => _finishing;
   bool get playing => controller.audibilityTestPlaying;
-  bool get hasExactAlarmCheck =>
-      controller.checks.any((c) => c.id == 'exact_alarm');
+  bool get hasExactAlarmCheck => controller.checks.any(
+    (c) => c.id == 'exact_alarm' && c.severity != HealthSeverity.ok,
+  );
 
   bool get requestingNotifications => _requestingNotifications;
   bool get hasChecks => controller.checks.isNotEmpty;

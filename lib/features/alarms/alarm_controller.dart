@@ -11,6 +11,17 @@ import '../../models/reconcile.dart';
 import '../../models/health.dart';
 import '../../platform/alarm_engine.dart';
 
+enum AlarmSaveFailure { camera, health, storage, engine }
+
+class AlarmSaveResult {
+  const AlarmSaveResult.saved() : saved = true, error = null, failure = null;
+  const AlarmSaveResult.failed(this.error, this.failure) : saved = false;
+
+  final bool saved;
+  final String? error;
+  final AlarmSaveFailure? failure;
+}
+
 /// Owns alarm state and keeps the Dart mirror and native scheduler in sync; a
 /// [ChangeNotifier] that reports errors as state so Health can show them.
 class AlarmController extends ChangeNotifier {
@@ -56,15 +67,21 @@ class AlarmController extends ChangeNotifier {
       _checks.where((c) => c.severity == HealthSeverity.blocking).toList();
 
   bool cameraPermissionMissingFor(Alarm alarm) =>
-      (alarm.escapes.contains(EscapeKind.face) || alarm.escapes.contains(EscapeKind.qr)) &&
-      _checks.any((check) => check.id == 'camera' && check.severity != HealthSeverity.ok);
+      (alarm.escapes.contains(EscapeKind.face) ||
+          alarm.escapes.contains(EscapeKind.object) ||
+          alarm.escapes.contains(EscapeKind.qr)) &&
+      _checks.any(
+        (check) => check.id == 'camera' && check.severity != HealthSeverity.ok,
+      );
 
   /// Alarms dropped by the platform's pending-slot cap; on iOS these will not
   /// ring, so they are surfaced. Empty where there is no cap (Android).
   List<Alarm> get droppedAlarms {
     if (_planned.length >= _alarms.length) return const [];
     final scheduledIds = _planned.map((p) => p.alarm.id).toSet();
-    return _alarms.where((a) => a.enabled && !scheduledIds.contains(a.id)).toList();
+    return _alarms
+        .where((a) => a.enabled && !scheduledIds.contains(a.id))
+        .toList();
   }
 
   /// Rungs the platform can hold, or null when it has no budget.
@@ -88,14 +105,6 @@ class AlarmController extends ChangeNotifier {
   Future<void> attach() async {
     await reload();
     await refreshHealth();
-    // If the native channel never answered, the app cannot ring anything.
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!_disposed && _capabilities == null) {
-      _setState(() {
-        _fatalError =
-            'The native alarm engine did not respond. Reinstall the app.';
-      });
-    }
   }
 
   /// Clears a fatal error and retries; a dead channel is often just the engine
@@ -117,7 +126,10 @@ class AlarmController extends ChangeNotifier {
       alarms = await repository.load();
       _storageError = null;
     } catch (error) {
-      _setState(() { _storageError = 'Could not read saved alarms: $error'; _loading = false; });
+      _setState(() {
+        _storageError = 'Could not read saved alarms: $error';
+        _loading = false;
+      });
       return;
     }
     var effective = alarms;
@@ -129,9 +141,16 @@ class AlarmController extends ChangeNotifier {
       _nativeTriggers = {
         for (final alarm in platform)
           if (alarm.enabled && (alarm.scheduledAtMillis ?? 0) > 0)
-            alarm.id: DateTime.fromMillisecondsSinceEpoch(alarm.scheduledAtMillis!),
+            alarm.id: DateTime.fromMillisecondsSinceEpoch(
+              alarm.scheduledAtMillis!,
+            ),
       };
-      final reconciled = reconcileAlarms(mirror: alarms, native: platform);
+      final reconciled = reconcileAlarms(
+        mirror: alarms,
+        native: platform,
+        nativeConfigurationAuthoritative:
+            defaultTargetPlatform == TargetPlatform.android,
+      );
       effective = reconciled.alarms;
       if (reconciled.needsSave) await repository.save(effective);
       for (final alarm in reconciled.toSchedule) {
@@ -142,17 +161,17 @@ class AlarmController extends ChangeNotifier {
         _nativeTriggers = {
           for (final alarm in confirmed)
             if (alarm.enabled && (alarm.scheduledAtMillis ?? 0) > 0)
-              alarm.id: DateTime.fromMillisecondsSinceEpoch(alarm.scheduledAtMillis!),
+              alarm.id: DateTime.fromMillisecondsSinceEpoch(
+                alarm.scheduledAtMillis!,
+              ),
         };
       }
     } on EngineException catch (error) {
-      // No native store is a capability gap, not a failure; the mirror is
-      // authoritative, and reporting it would leave a permanent red bar.
-      if (error.code != 'MISSING_PLUGIN') {
-        _lastError = 'Could not read native alarms: ${error.message}';
-      }
+      _lastError = 'Could not read native alarms: ${error.message}';
+      _nativeTriggers = const {};
     } on MissingPluginException {
-      // Same as above, for a channel that has not been translated yet.
+      _lastError = 'Native alarm engine is missing.';
+      _nativeTriggers = const {};
     } catch (error) {
       _lastError = 'Could not reconcile alarms: $error';
     }
@@ -185,33 +204,79 @@ class AlarmController extends ChangeNotifier {
       _setState(() => _fatalError = error.message);
     } on MissingPluginException {
       _setState(() => _fatalError = 'Native alarm engine is missing.');
+    } catch (error) {
+      _setState(() => _fatalError = 'Could not check the alarm engine: $error');
     }
   }
 
   Future<List<Map<String, Object?>>> _readHistory() async {
     try {
       return await engine.history();
-    } on EngineException {
-      return const [];
-    } on MissingPluginException {
-      return const [];
+    } catch (error) {
+      // A temporary read error must not make an existing streak disappear.
+      debugPrint('WakeGuard history refresh failed: $error');
+      return _history;
     }
   }
 
-  Future<void> upsert(Alarm alarm) => _queued(() => _upsert(alarm));
+  Future<AlarmSaveResult> upsert(Alarm alarm) => _queued(() => _upsert(alarm));
 
-  Future<void> _upsert(Alarm alarm, {bool requireCamera = true}) async {
+  AlarmSaveResult _saveFailure(String message, AlarmSaveFailure failure) {
+    _setState(() => _lastError = message);
+    return AlarmSaveResult.failed(message, failure);
+  }
+
+  Future<AlarmSaveResult> _upsert(
+    Alarm alarm, {
+    bool requireCamera = true,
+  }) async {
+    _setState(() => _lastError = null);
     await _refreshHealth();
-    if (requireCamera && cameraPermissionMissingFor(alarm)) {
-      _setState(() => _lastError = 'Alarm not saved. Enable camera permission in Health for Face/QR challenges.');
-      return;
+    if (fatalError != null) {
+      return _saveFailure(
+        'Alarm not saved: $fatalError',
+        AlarmSaveFailure.engine,
+      );
     }
+    if (alarm.enabled && alarm.needsSetup) {
+      return _saveFailure(
+        'Open this alarm and set up its replacement challenge before enabling it.',
+        AlarmSaveFailure.health,
+      );
+    }
+    if (alarm.enabled &&
+        alarm.escapes.contains(EscapeKind.object) &&
+        !alarm.objectVerified) {
+      return _saveFailure(
+        'Successfully practice your ${alarm.objectTarget.label.toLowerCase()} before enabling this alarm.',
+        AlarmSaveFailure.health,
+      );
+    }
+    if (alarm.enabled && requireCamera && cameraPermissionMissingFor(alarm)) {
+      return _saveFailure(
+        'Alarm not saved. Enable camera permission in Health for Face/Object/QR challenges.',
+        AlarmSaveFailure.camera,
+      );
+    }
+    if (alarm.enabled && unresolvedChecks.isNotEmpty) {
+      return _saveFailure(
+        'Alarm not saved: ${unresolvedChecks.map((c) => c.label).join(', ')}. Open Health to fix it.',
+        AlarmSaveFailure.health,
+      );
+    }
+    final previous = List<Alarm>.of(_alarms);
     final exists = _alarms.any((a) => a.id == alarm.id);
     final next = exists
         ? _alarms.map((a) => a.id == alarm.id ? alarm : a).toList()
         : [..._alarms, alarm];
-    try { await repository.save(next); }
-    catch (error) { _setState(() => _lastError = 'Could not save alarm: $error'); return; }
+    try {
+      await repository.save(next);
+    } catch (error) {
+      return _saveFailure(
+        'Could not save alarm: $error',
+        AlarmSaveFailure.storage,
+      );
+    }
 
     try {
       if (alarm.enabled) {
@@ -219,22 +284,42 @@ class AlarmController extends ChangeNotifier {
       } else {
         await engine.cancel(alarm.id);
       }
+    } catch (error) {
+      // Do not leave the failed edit in the mirror as if it were armed.
+      try {
+        await repository.save(previous);
+      } catch (rollbackError) {
+        _setState(
+          () =>
+              _storageError = 'Could not restore saved alarms: $rollbackError',
+        );
+      }
       await _reload();
-      _setState(() => _lastError = null);
-    } on EngineException catch (error) {
-      await _reload();
-      _setState(() => _lastError = 'Native schedule failed: ${error.message}');
-    } on MissingPluginException {
-      await _reload();
-      _setState(() => _lastError = 'Native alarm engine is missing.');
+      final confirmed = _alarms.where((value) => value.id == alarm.id);
+      if (error is EngineException &&
+          error.code == 'TIMEOUT' &&
+          confirmed.isNotEmpty &&
+          sameAlarmConfiguration(confirmed.first, alarm) &&
+          (!alarm.enabled || _nativeTriggers.containsKey(alarm.id))) {
+        _setState(() => _lastError = null);
+        return const AlarmSaveResult.saved();
+      }
+      return _saveFailure(
+        'Native schedule failed: $error. Your draft was not saved.',
+        AlarmSaveFailure.engine,
+      );
     }
-    await _refreshHealth();
+    await _reload();
+    // A successful native mutation plus durable mirror write is the save result;
+    // a later history/read refresh must not turn it into a false save failure.
+    return const AlarmSaveResult.saved();
   }
 
   Future<void> setEnabled(Alarm alarm, bool enabled) => _queued(() async {
     await _refreshHealth();
     if (enabled && cameraPermissionMissingFor(alarm)) {
-      const message = 'Enable camera permission in Health before turning on this Face/QR alarm.';
+      const message =
+          'Enable camera permission in Health before turning on this camera challenge.';
       _setState(() => _lastError = message);
       throw StateError(message);
     }
@@ -244,21 +329,44 @@ class AlarmController extends ChangeNotifier {
       _setState(() => _lastError = message);
       throw StateError(message);
     }
-    final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
-    await _upsert(current.copyWith(enabled: enabled, skipUntilMillis: 0), requireCamera: enabled);
+    final current = _alarms.firstWhere(
+      (a) => a.id == alarm.id,
+      orElse: () => alarm,
+    );
+    final result = await _upsert(
+      current.copyWith(enabled: enabled, skipUntilMillis: 0),
+      requireCamera: enabled,
+    );
+    if (!result.saved) throw StateError(result.error!);
   });
 
   Future<void> duplicate(Alarm alarm) => _queued(() async {
-    final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
-    await _upsert(current.copyWith(id: Alarm.generateId(), label: '${current.label} (copy)',
-        enabled: false, skipUntilMillis: 0));
+    final current = _alarms.firstWhere(
+      (a) => a.id == alarm.id,
+      orElse: () => alarm,
+    );
+    await _upsert(
+      current.copyWith(
+        id: Alarm.generateId(),
+        label: '${current.label} (copy)',
+        enabled: false,
+        skipUntilMillis: 0,
+      ),
+    );
     if (_lastError != null) throw StateError(_lastError!);
   });
 
   Future<void> skipNext(Alarm alarm) => _queued(() async {
-    final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
+    final current = _alarms.firstWhere(
+      (a) => a.id == alarm.id,
+      orElse: () => alarm,
+    );
     if (!current.enabled || !current.isRepeating) return;
-    await _upsert(current.copyWith(skipUntilMillis: current.nextOccurrence().millisecondsSinceEpoch));
+    await _upsert(
+      current.copyWith(
+        skipUntilMillis: current.nextOccurrence().millisecondsSinceEpoch,
+      ),
+    );
     if (_lastError != null) throw StateError(_lastError!);
   });
 
@@ -273,7 +381,10 @@ class AlarmController extends ChangeNotifier {
   });
 
   Future<void> restoreNext(Alarm alarm) => _queued(() async {
-    final current = _alarms.firstWhere((a) => a.id == alarm.id, orElse: () => alarm);
+    final current = _alarms.firstWhere(
+      (a) => a.id == alarm.id,
+      orElse: () => alarm,
+    );
     await _upsert(current.copyWith(skipUntilMillis: 0));
     if (_lastError != null) throw StateError(_lastError!);
   });
@@ -282,8 +393,12 @@ class AlarmController extends ChangeNotifier {
 
   Future<bool> _delete(Alarm alarm) async {
     final next = _alarms.where((a) => a.id != alarm.id).toList();
-    try { await repository.save(next); }
-    catch (error) { _setState(() => _lastError = 'Could not delete alarm: $error'); return false; }
+    try {
+      await repository.save(next);
+    } catch (error) {
+      _setState(() => _lastError = 'Could not delete alarm: $error');
+      return false;
+    }
     var cancelled = true;
     try {
       await engine.cancel(alarm.id);

@@ -110,7 +110,8 @@ private extension StoredAlarm {
             qrValue: qrValue,
             stepCount: stepCount,
             // Copy every field; dropping one silently resets it when disabled after ringing.
-            soundPack: soundPack
+            soundPack: soundPack,
+            holdSeconds: holdSeconds
         )
     }
 }

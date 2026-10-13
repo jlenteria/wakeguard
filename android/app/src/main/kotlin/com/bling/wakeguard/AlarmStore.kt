@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -17,24 +17,28 @@ object AlarmDefaults {
 
     /** Escape names, mirroring the Dart `EscapeKind` enum. Keep them in step. */
     const val ESCAPE_FACE = "face"
-    const val ESCAPE_PATTERN = "pattern"
+    const val ESCAPE_OBJECT = "object"
     const val ESCAPE_QR = "qr"
     const val ESCAPE_TAP = "tap"
 
-    /** Every escape, and the fallback for a record that names none. */
-    val ALL_ESCAPES = setOf(ESCAPE_FACE, ESCAPE_PATTERN, ESCAPE_QR)
+    /** Camera challenges; Tap is separately opted into. */
+    val ALL_ESCAPES = setOf(ESCAPE_FACE, ESCAPE_OBJECT, ESCAPE_QR)
 
     /**
-     * Parses an escape set from JSON, a comma-extra, or nothing. Unknown names are dropped and an
-     * empty result falls back to [ALL_ESCAPES], so a damaged record still offers a way out.
+     * Unknown names are dropped. A legacy Pattern-only record is an Object draft
+     * that needs setup, never a silent Tap fallback.
      */
     fun escapesFrom(values: Collection<String>?): Set<String> {
-        val parsed = values.orEmpty()
+        if (values == null) return setOf(ESCAPE_FACE)
+        val parsed = values
             .map { it.trim() }
             .filter { it in ALL_ESCAPES || it == ESCAPE_TAP }
             .toSet()
-        return parsed.ifEmpty { ALL_ESCAPES }
+        return parsed.ifEmpty { setOf(ESCAPE_OBJECT) }
     }
+
+    fun needsChallengeSetup(values: Collection<String>?): Boolean = values != null &&
+        values.none { it in ALL_ESCAPES || it == ESCAPE_TAP }
 
     fun escapesFromExtra(encoded: String?): Set<String> =
         escapesFrom(encoded?.split(','))
@@ -58,8 +62,11 @@ data class StoredAlarm(
     /** Minutes the user may surrender this alarm for; 0 disables snoozing. */
     val snoozeMinutes: Int = AlarmDefaults.DEFAULT_SNOOZE_MINUTES,
     /** Escapes this alarm offers: a subset of [AlarmDefaults.ALL_ESCAPES]. */
-    val escapes: Set<String> = AlarmDefaults.ALL_ESCAPES,
+    val escapes: Set<String> = setOf(AlarmDefaults.ESCAPE_FACE),
     val checkInMinutes: Int = 0,
+    val objectTarget: String = "sink",
+    val objectVerified: Boolean = false,
+    val needsSetup: Boolean = false,
     val skipUntilMillis: Long = 0L,
     val nextTriggerAt: Long = 0L,
 ) {
@@ -77,6 +84,9 @@ data class StoredAlarm(
         put("snoozeMinutes", snoozeMinutes)
         put("escapes", org.json.JSONArray(escapes.sorted()))
         put("checkInMinutes", checkInMinutes)
+        put("objectTarget", objectTarget)
+        put("objectVerified", objectVerified)
+        put("needsSetup", needsSetup)
         put("skipUntilMillis", skipUntilMillis)
         put("nextTriggerAt", nextTriggerAt)
     }
@@ -93,12 +103,19 @@ data class StoredAlarm(
 
         fun fromJson(raw: String): StoredAlarm? = runCatching {
             val json = JSONObject(raw)
+            val rawEscapes = json.optJSONArray("escapes")?.let { array ->
+                (0 until array.length()).map { array.getString(it) }
+            }
+            val needsSetup = json.optBoolean("needsSetup", false) ||
+                AlarmDefaults.needsChallengeSetup(rawEscapes) ||
+                (rawEscapes?.contains(AlarmDefaults.ESCAPE_OBJECT) == true &&
+                    json.optString("objectTarget") !in ObjectTargets.names)
             StoredAlarm(
                 id = json.getString("id"),
                 hour = json.getInt("hour"),
                 minute = json.getInt("minute"),
                 label = json.optString("label", "Wake up"),
-                enabled = json.optBoolean("enabled", true),
+                enabled = !needsSetup && json.optBoolean("enabled", true),
                 repeatDaily = json.optBoolean("repeatDaily", true),
                 weekdays = json.optJSONArray("weekdays")
                     ?.let { array -> (0 until array.length()).map { array.getInt(it) } }
@@ -111,12 +128,11 @@ data class StoredAlarm(
                     "snoozeMinutes",
                     AlarmDefaults.DEFAULT_SNOOZE_MINUTES,
                 ).coerceIn(0, 60),
-                escapes = AlarmDefaults.escapesFrom(
-                    json.optJSONArray("escapes")?.let { array ->
-                        (0 until array.length()).map { array.getString(it) }
-                    },
-                ),
+                escapes = AlarmDefaults.escapesFrom(rawEscapes),
                 checkInMinutes = json.optInt("checkInMinutes", 0).takeIf { it in setOf(0, 3, 5, 10) } ?: 0,
+                objectTarget = json.optString("objectTarget", "sink").takeIf { it in ObjectTargets.names } ?: "sink",
+                objectVerified = json.optString("objectTarget") in ObjectTargets.names && json.optBoolean("objectVerified", false),
+                needsSetup = needsSetup,
                 skipUntilMillis = json.optLong("skipUntilMillis", 0L),
                 nextTriggerAt = json.optLong("nextTriggerAt", 0L),
             )

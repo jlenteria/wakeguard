@@ -23,12 +23,12 @@ class _FakeEngine implements AlarmEngine {
 
   @override
   Future<EngineCapabilities> capabilities() async => const EngineCapabilities(
-        canLoopWhileBackgrounded: true,
-        canLockScreenTakeover: true,
-        canUseCameraInBackground: true,
-        canBypassSilentSwitch: false,
-        pendingSlotCap: null,
-      );
+    canLoopWhileBackgrounded: true,
+    canLockScreenTakeover: true,
+    canUseCameraInBackground: true,
+    canBypassSilentSwitch: false,
+    pendingSlotCap: null,
+  );
 
   @override
   Future<void> schedule(Alarm alarm, DateTime triggerAt) async {
@@ -57,7 +57,11 @@ class _FakeEngine implements AlarmEngine {
   Future<List<Map<String, Object?>>> history() async => const [];
 
   @override
-  Future<void> dismiss(String alarmId, {required String method}) async {}
+  Future<void> dismiss(
+    String alarmId, {
+    required String method,
+    required String sessionId,
+  }) async {}
 
   @override
   Future<List<HealthCheck>> health() async => healthChecks;
@@ -98,10 +102,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     engine = _FakeEngine();
-    controller = AlarmController(
-      engine: engine,
-      repository: AlarmRepository(),
-    );
+    controller = AlarmController(engine: engine, repository: AlarmRepository());
     await controller.attach();
   });
 
@@ -114,34 +115,61 @@ void main() {
   });
 
   test('camera draft is not persisted until permission is granted', () async {
-    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
-      detail: 'Permission denied', severity: HealthSeverity.warning, action: 'camera')];
-    final draft = _alarm('camera').copyWith(escapes: {EscapeKind.qr}, qrValue: 'SHARED');
+    engine.healthChecks = const [
+      HealthCheck(
+        id: 'camera',
+        label: 'Camera',
+        detail: 'Permission denied',
+        severity: HealthSeverity.warning,
+        action: 'camera',
+      ),
+    ];
+    final draft = _alarm(
+      'camera',
+    ).copyWith(escapes: {EscapeKind.qr}, qrValue: 'SHARED');
     await controller.upsert(draft);
     expect(controller.alarms, isEmpty);
     expect(await AlarmRepository().load(), isEmpty);
     expect(engine.store, isEmpty);
     expect(controller.lastError, contains('camera permission'));
 
-    await controller.upsert(_alarm('pattern').copyWith(escapes: {EscapeKind.pattern}));
-    expect(engine.store.single.id, 'pattern');
+    await controller.upsert(_alarm('tap').copyWith(escapes: {EscapeKind.tap}));
+    expect(engine.store.single.id, 'tap');
 
-    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
-      detail: 'Granted', severity: HealthSeverity.ok)];
+    engine.healthChecks = const [
+      HealthCheck(
+        id: 'camera',
+        label: 'Camera',
+        detail: 'Granted',
+        severity: HealthSeverity.ok,
+      ),
+    ];
     await controller.upsert(draft);
     expect(engine.store.any((alarm) => alarm.id == 'camera'), isTrue);
   });
 
-  test('camera permission blocks enabling but never blocks disabling', () async {
-    final alarm = _alarm('face');
-    await controller.upsert(alarm);
-    engine.healthChecks = const [HealthCheck(id: 'camera', label: 'Camera',
-      detail: 'Denied', severity: HealthSeverity.warning)];
-    await controller.setEnabled(alarm, false);
-    expect(controller.alarms.single.enabled, isFalse);
-    await expectLater(controller.setEnabled(controller.alarms.single, true), throwsStateError);
-    expect(controller.alarms.single.enabled, isFalse);
-  });
+  test(
+    'camera permission blocks enabling but never blocks disabling',
+    () async {
+      final alarm = _alarm('face');
+      await controller.upsert(alarm);
+      engine.healthChecks = const [
+        HealthCheck(
+          id: 'camera',
+          label: 'Camera',
+          detail: 'Denied',
+          severity: HealthSeverity.warning,
+        ),
+      ];
+      await controller.setEnabled(alarm, false);
+      expect(controller.alarms.single.enabled, isFalse);
+      await expectLater(
+        controller.setEnabled(controller.alarms.single, true),
+        throwsStateError,
+      );
+      expect(controller.alarms.single.enabled, isFalse);
+    },
+  );
 
   test('upsert saves to the mirror and arms the platform', () async {
     await controller.upsert(_alarm('a'));
@@ -151,19 +179,21 @@ void main() {
     expect(engine.store.single.enabled, isTrue);
   });
 
-  test('rapid delete-then-undo keeps the alarm (mutations are queued)',
-      () async {
-    await controller.upsert(_alarm('a'));
-    engine.log.clear();
+  test(
+    'rapid delete-then-undo keeps the alarm (mutations are queued)',
+    () async {
+      await controller.upsert(_alarm('a'));
+      engine.log.clear();
 
-    // Fired without awaiting, exactly like a user tapping Undo.
-    final deleting = controller.delete(controller.alarms.single);
-    final undoing = controller.upsert(_alarm('a'));
-    await Future.wait([deleting, undoing]);
+      // Fired without awaiting, exactly like a user tapping Undo.
+      final deleting = controller.delete(controller.alarms.single);
+      final undoing = controller.upsert(_alarm('a'));
+      await Future.wait([deleting, undoing]);
 
-    expect(controller.alarms.map((a) => a.id), ['a']);
-    expect(engine.store.map((a) => a.id), ['a']);
-  });
+      expect(controller.alarms.map((a) => a.id), ['a']);
+      expect(engine.store.map((a) => a.id), ['a']);
+    },
+  );
 
   test('rapid upsert-then-delete ends with the alarm gone', () async {
     await controller.upsert(_alarm('a'));
@@ -176,8 +206,7 @@ void main() {
     expect(engine.store, isEmpty);
   });
 
-  test('a platform store that retired the alarm corrects the mirror',
-      () async {
+  test('a platform store that retired the alarm corrects the mirror', () async {
     await controller.upsert(_alarm('a'));
     engine.store.clear(); // e.g. fired while the app was closed
     engine.store.add(_alarm('a', enabled: false));
@@ -188,8 +217,7 @@ void main() {
     expect(controller.unresolvedChecks, isEmpty);
   });
 
-  test('an alarm missing natively is re-armed rather than dropped',
-      () async {
+  test('an alarm missing natively is re-armed rather than dropped', () async {
     await controller.upsert(_alarm('a'));
     engine.store.clear();
 
@@ -199,17 +227,20 @@ void main() {
     expect(engine.store.map((a) => a.id), ['a']);
   });
 
-  test('a scheduling failure surfaces as an error and keeps the list',
-      () async {
-    engine.failSchedule = true;
+  test(
+    'a scheduling failure surfaces as an error and keeps the list',
+    () async {
+      await controller.upsert(_alarm('a'));
+      engine.failSchedule = true;
+      await controller.upsert(_alarm('a'));
 
-    await controller.upsert(_alarm('a'));
-
-    expect(controller.lastError, contains('schedule'));
-    expect(controller.alarms.map((a) => a.id), ['a']);
-  });
+      expect(controller.lastError, contains('schedule'));
+      expect(controller.alarms.map((a) => a.id), ['a']);
+    },
+  );
 
   test('delete clears a scheduling error', () async {
+    await controller.upsert(_alarm('a'));
     engine.failSchedule = true;
     await controller.upsert(_alarm('a'));
     engine.failSchedule = false;
@@ -234,15 +265,18 @@ void main() {
     expect(engine.store.single.hour, 9);
   });
 
-  test('duplicate is independent and disabled until the user enables it', () async {
-    await controller.upsert(_alarm('a'));
-    await controller.duplicate(controller.alarms.single);
-    expect(controller.alarms.length, 2);
-    final copy = controller.alarms.firstWhere((a) => a.id != 'a');
-    expect(copy.enabled, isFalse);
-    expect(copy.label, 'a (copy)');
-    expect(controller.droppedAlarms, isEmpty);
-  });
+  test(
+    'duplicate is independent and disabled until the user enables it',
+    () async {
+      await controller.upsert(_alarm('a'));
+      await controller.duplicate(controller.alarms.single);
+      expect(controller.alarms.length, 2);
+      final copy = controller.alarms.firstWhere((a) => a.id != 'a');
+      expect(copy.enabled, isFalse);
+      expect(copy.label, 'a (copy)');
+      expect(controller.droppedAlarms, isEmpty);
+    },
+  );
 
   test('stopping the audibility sample is best effort', () async {
     await controller.stopAudibilitySample();

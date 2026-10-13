@@ -244,9 +244,50 @@ void main() {
   });
 
   group('escapes', () {
-    test('a new alarm offers the two escapes that need no setup', () {
+    test('object choices contain only Sink and Cup', () {
+      expect(WakeObject.values.map((target) => target.name), ['sink', 'cup']);
+    });
+
+    test(
+      'removed Plant alarms require new setup without reusing verification',
+      () {
+        final json =
+            Alarm(id: 'plant', hour: 7, minute: 0, label: 'Plant').toJson()
+              ..['escapes'] = ['object']
+              ..['objectTarget'] = 'plant'
+              ..['objectVerified'] = true;
+        final migrated = Alarm.fromJson(json);
+        expect(migrated.enabled, isFalse);
+        expect(migrated.needsSetup, isTrue);
+        expect(migrated.objectTarget, WakeObject.sink);
+        expect(migrated.objectVerified, isFalse);
+        expect(migrated.escapes, {EscapeKind.object});
+      },
+    );
+
+    test(
+      'supported Cup alarms keep their selected target and verification',
+      () {
+        final original = Alarm(
+          id: 'cup',
+          hour: 7,
+          minute: 0,
+          label: 'Cup',
+          escapes: {EscapeKind.object},
+          objectTarget: WakeObject.cup,
+          objectVerified: true,
+        );
+        final restored = Alarm.fromJson(original.toJson());
+        expect(restored.enabled, isTrue);
+        expect(restored.needsSetup, isFalse);
+        expect(restored.objectTarget, WakeObject.cup);
+        expect(restored.objectVerified, isTrue);
+      },
+    );
+
+    test('a new alarm offers Face without opting into Tap', () {
       final created = Alarm(id: 'a', hour: 7, minute: 0, label: 'x');
-      expect(created.escapes, {EscapeKind.face, EscapeKind.pattern});
+      expect(created.escapes, {EscapeKind.face});
     });
 
     test('a chosen subset survives a JSON round trip', () {
@@ -255,22 +296,34 @@ void main() {
         hour: 7,
         minute: 0,
         label: 'x',
-        escapes: {EscapeKind.pattern},
+        escapes: {EscapeKind.tap},
       );
-      expect(Alarm.fromJson(original.toJson()).escapes, {EscapeKind.pattern});
+      expect(Alarm.fromJson(original.toJson()).escapes, {EscapeKind.tap});
     });
 
-    test('a record from before escapes existed keeps every way out', () {
+    test('a record from before escapes existed defaults to Face', () {
       final json = Alarm(id: 'a', hour: 7, minute: 0, label: 'x').toJson()
         ..remove('escapes');
-      expect(Alarm.fromJson(json).escapes, Alarm.allEscapes);
+      expect(Alarm.fromJson(json).escapes, Alarm.defaultEscapes);
     });
 
     test('a field from a newer build drops names this one does not know', () {
       final json = Alarm(id: 'a', hour: 7, minute: 0, label: 'x').toJson()
-        ..['escapes'] = ['pattern', 'telepathy'];
-      expect(Alarm.fromJson(json).escapes, {EscapeKind.pattern});
+        ..['escapes'] = ['face', 'telepathy'];
+      expect(Alarm.fromJson(json).escapes, {EscapeKind.face});
     });
+
+    test(
+      'legacy Pattern-only alarms require object setup and stay disabled',
+      () {
+        final json = Alarm(id: 'a', hour: 7, minute: 0, label: 'x').toJson()
+          ..['escapes'] = ['pattern'];
+        final migrated = Alarm.fromJson(json);
+        expect(migrated.escapes, {EscapeKind.object});
+        expect(migrated.needsSetup, isTrue);
+        expect(migrated.enabled, isFalse);
+      },
+    );
 
     test('usesFace follows the set, so the camera check can see it', () {
       final withoutFace = Alarm(
@@ -278,13 +331,10 @@ void main() {
         hour: 7,
         minute: 0,
         label: 'x',
-        escapes: {EscapeKind.pattern},
+        escapes: {EscapeKind.tap},
       );
       expect(withoutFace.usesFace, isFalse);
-      expect(
-        Alarm(id: 'b', hour: 7, minute: 0, label: 'x').usesFace,
-        isTrue,
-      );
+      expect(Alarm(id: 'b', hour: 7, minute: 0, label: 'x').usesFace, isTrue);
     });
   });
 

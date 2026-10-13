@@ -8,6 +8,17 @@ import 'package:wakeguard/features/alarms/alarm_editor_screen.dart';
 import 'package:wakeguard/features/challenges/qr_sheet.dart';
 
 void main() {
+  Future<void> reveal(WidgetTester tester, Finder finder, double delta) =>
+      tester.scrollUntilVisible(
+        finder,
+        delta,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
@@ -23,7 +34,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // qr_flutter renders failures as blank squares, so assert a real QrPainter with a version.
-    expect(find.text('Could not render this code.'), findsNothing);
+    expect(find.textContaining('Could not show this QR code.'), findsNothing);
 
     final paint = tester.widgetList<CustomPaint>(
       find.descendant(
@@ -56,7 +67,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final field = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'QR code secret'),
+      find.widgetWithText(TextField, 'QR code value'),
     );
     final secret = field.controller!.text;
     expect(secret, isNotEmpty);
@@ -82,7 +93,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.qr_code_2_outlined));
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'QR code secret'),
+        find.widgetWithText(TextField, 'QR code value'),
       );
       secrets.add(field.controller!.text);
     }
@@ -98,10 +109,10 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final pack in AlarmSoundPack.values) {
+      await reveal(tester, find.text(pack.label), 250);
       expect(find.text(pack.label), findsOneWidget);
+      expect(find.byTooltip('Preview ${pack.label}'), findsOneWidget);
     }
-    // One preview button per family: the point of the picker is comparing first.
-    expect(find.byIcon(Icons.volume_up_outlined), findsNWidgets(4));
   });
 
   testWidgets('new QR alarms reuse the shared code across editor sessions', (
@@ -123,7 +134,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'QR code secret'),
+        find.widgetWithText(TextField, 'QR code value'),
       );
       expect(field.controller!.text, 'SHARED-WAKE-UP');
       expect(find.text('Show wake-up QR'), findsOneWidget);
@@ -152,10 +163,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'QR code secret'),
+      find.widgetWithText(TextField, 'QR code value'),
     );
     expect(field.controller!.text, 'OLD-PRINTED-CODE');
-    await tester.ensureVisible(find.text('Use shared wake-up QR'));
+    await reveal(tester, find.text('Use shared wake-up QR'), 250);
     await tester.tap(find.text('Use shared wake-up QR'));
     await tester.pumpAndSettle();
     expect(field.controller!.text, 'SHARED-WAKE-UP');
@@ -203,24 +214,25 @@ void main() {
   });
 
   testWidgets(
-    'get-out-of-bed preset provides a code, no snooze and one check-in',
+    'get-out-of-bed preset selects an object, no snooze and one check-in',
     (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: AlarmEditor())),
       );
       await tester.tap(find.widgetWithText(ChoiceChip, 'Get out of bed'));
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'QR code secret'),
-      );
-      expect(field.controller!.text, isNotEmpty);
+      await reveal(tester, find.text('Your wake-up object'), 250);
+      expect(find.widgetWithText(TextField, 'QR code value'), findsNothing);
+      await reveal(tester, find.widgetWithText(ChoiceChip, 'No snooze'), 250);
       expect(
         tester
             .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'No snooze'))
             .selected,
         isTrue,
       );
-      // Snooze and check-in both have a five-minute choice; only check-in is selected.
+      await reveal(tester, find.text('Stay Awake check-in'), 250);
+      await reveal(tester, find.widgetWithText(ChoiceChip, 'Off'), 150);
+      // Only the check-in five-minute choice is selected.
       expect(
         tester
             .widgetList<ChoiceChip>(find.widgetWithText(ChoiceChip, '5 min'))
@@ -241,8 +253,9 @@ void main() {
       ),
     );
     await tester.tap(find.widgetWithText(ChoiceChip, 'Simple'));
+    await tester.pumpAndSettle();
     final button = find.text('Practice this challenge — no alarm scheduled');
-    await tester.ensureVisible(button);
+    await reveal(tester, button, 250);
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(engine.practiced?.escapes, {EscapeKind.tap});

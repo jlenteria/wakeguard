@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -9,25 +9,49 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    private val readQueue = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var channelAlive = true
 
     private companion object {
-        const val CHANNEL = "app.wakeguard/alarm"
+        const val CHANNEL = "com.bling.wakeguard/alarm"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         RingingService.createChannel(this)
+        StayAwake.createChannel(this)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
-                runCatching { handle(call) }
-                    .onSuccess { result.success(it) }
-                    .onFailure {
-                        result.error("NATIVE_ERROR", it.message, null)
-                    }
+                // Preferences and system-service reads must not block Flutter's
+                // platform thread during startup or a sheet transition.
+                if (call.method in setOf("alarms", "health", "history", "capabilities", "objectTargetVerified")) {
+                    runCatching { readQueue.execute {
+                        val outcome = runCatching { handle(call) }
+                        mainHandler.post {
+                            if (!channelAlive) return@post
+                            outcome.onSuccess { result.success(it) }
+                                .onFailure { result.error("NATIVE_ERROR", it.message, null) }
+                        }
+                    } }.onFailure { result.error("NATIVE_ERROR", "Alarm activity is closing. Retry.", null) }
+                } else {
+                    // Permission dialogs, navigation and playback stay on the UI thread.
+                    runCatching { handle(call) }
+                        .onSuccess { result.success(it) }
+                        .onFailure { result.error("NATIVE_ERROR", it.message, null) }
+                }
             }
+    }
+
+    override fun onDestroy() {
+        channelAlive = false
+        mainHandler.removeCallbacksAndMessages(null)
+        readQueue.shutdown()
+        super.onDestroy()
     }
 
     private fun handle(call: MethodCall): Any? = when (call.method) {
@@ -54,13 +78,23 @@ class MainActivity : FlutterActivity() {
                     ?: AlarmDefaults.DEFAULT_SNOOZE_MINUTES).coerceIn(0, 60),
                 escapes = AlarmDefaults.escapesFrom(call.argument<List<String>>("escapes")),
                 checkInMinutes = (call.argument<Int>("checkInMinutes") ?: 0).takeIf { it in setOf(0, 3, 5, 10) } ?: 0,
+                objectTarget = call.argument<String>("objectTarget") ?: "sink",
+                objectVerified = ObjectTargets.verified(this, call.argument<String>("objectTarget") ?: "sink"),
+                needsSetup = call.argument<Boolean>("needsSetup") ?: false,
                 skipUntilMillis = call.argument<Number>("skipUntilMillis")?.toLong() ?: 0L,
             )
             val triggerAt = (call.argument<Number>("triggerAtMillis"))?.toLong()
                 ?: NativeAlarmScheduler.nextTrigger(alarm.hour, alarm.minute, alarm.weekdays)
-            check((AlarmDefaults.ESCAPE_FACE !in alarm.escapes && AlarmDefaults.ESCAPE_QR !in alarm.escapes) ||
+            check(!alarm.needsSetup) { "Open this alarm and set up its new challenge before enabling it" }
+            check(AlarmDefaults.ESCAPE_OBJECT !in alarm.escapes || ObjectTargets.verified(this, alarm.objectTarget)) {
+                "Successfully practice scanning your ${ObjectTargets.title(alarm.objectTarget)} before enabling this alarm"
+            }
+            check((AlarmDefaults.ESCAPE_FACE !in alarm.escapes && AlarmDefaults.ESCAPE_OBJECT !in alarm.escapes && AlarmDefaults.ESCAPE_QR !in alarm.escapes) ||
                 HealthChecker.hasCameraPermission(this)) {
-                "Enable camera permission in Health before saving a Face/QR alarm"
+                "Enable camera permission in Health before saving a camera challenge"
+            }
+            check(alarm.checkInMinutes <= 0 || StayAwake.notificationsAvailable(this)) {
+                "Enable Stay Awake notifications in Health before saving a check-in alarm"
             }
             NativeAlarmScheduler.schedule(this, alarm, triggerAt)
             null
@@ -83,6 +117,9 @@ class MainActivity : FlutterActivity() {
                 "snoozeMinutes" to alarm.snoozeMinutes,
                 "escapes" to alarm.escapes.sorted(),
                 "checkInMinutes" to alarm.checkInMinutes,
+                "objectTarget" to alarm.objectTarget,
+                "objectVerified" to ObjectTargets.verified(this, alarm.objectTarget),
+                "needsSetup" to alarm.needsSetup,
                 "skipUntilMillis" to alarm.skipUntilMillis,
                 "nextTriggerAt" to alarm.nextTriggerAt,
             )
@@ -98,9 +135,13 @@ class MainActivity : FlutterActivity() {
         "dismiss" -> {
             val id = call.argument<String>("id")
                 ?: throw IllegalArgumentException("id is required")
-            AlarmDismissal.complete(this, id, call.argument<String>("method") ?: "settings", call.argument<String>("sessionId"))
+            check(AlarmDismissal.complete(this, id, call.argument<String>("method") ?: "settings", call.argument<String>("sessionId"))) {
+                "This alarm session is no longer ringing, or this challenge is not selected"
+            }
             null
         }
+
+        "objectTargetVerified" -> ObjectTargets.verified(this, call.argument<String>("target") ?: "")
 
         "history" -> AlarmDismissal.history(this)
         "clearHistory" -> { AlarmEvents.clear(this); null }
@@ -113,6 +154,7 @@ class MainActivity : FlutterActivity() {
                 putExtra(NativeAlarmScheduler.EXTRA_QR, call.argument<String>("qrValue") ?: "")
                 putExtra(NativeAlarmScheduler.EXTRA_ESCAPES,
                     AlarmDefaults.escapesFrom(call.argument<List<String>>("escapes")).joinToString(","))
+                putExtra(NativeAlarmScheduler.EXTRA_OBJECT_TARGET, call.argument<String>("objectTarget") ?: "sink")
             })
             null
         }
@@ -146,8 +188,13 @@ class MainActivity : FlutterActivity() {
         }
 
         "requestPermissions" -> {
-            // Must run on the activity thread and off the main looper queue.
-            HealthChecker.requestNotificationPermission(this@MainActivity)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                !HealthChecker.hasNotificationPermission(this)) {
+                HealthChecker.requestNotificationPermission(this)
+            } else if (!androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                val failure = HealthChecker.openFix(this, "notification_permission")
+                check(failure == null) { failure ?: "Could not open notification settings" }
+            }
             true
         }
 

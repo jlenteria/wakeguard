@@ -9,17 +9,29 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   Future<void> openSheet(WidgetTester tester) async {
+    Future<void> reveal(Finder finder) => tester.scrollUntilVisible(
+      finder,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: AlarmEditor())),
     );
     await tester.pumpAndSettle();
     // QR is opt-in: the code field and its generate button only appear once on.
-    await tester.ensureVisible(find.widgetWithText(FilterChip, 'QR code'));
+    await reveal(find.widgetWithText(FilterChip, 'QR code'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byIcon(Icons.qr_code_2_outlined));
+    await reveal(find.byIcon(Icons.qr_code_2_outlined));
     await tester.tap(find.byIcon(Icons.qr_code_2_outlined));
     await tester.pumpAndSettle();
+    await reveal(find.text('Show QR code'));
     await tester.tap(find.text('Show QR code'));
     await tester.pumpAndSettle();
   }

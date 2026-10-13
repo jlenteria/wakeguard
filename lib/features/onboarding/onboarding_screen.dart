@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/toast.dart';
+import '../../shared/device_guidance.dart';
 import 'onboarding_screen_view_model.dart';
 
 /// First-run screen for the three settings that decide whether an alarm rings,
@@ -21,8 +22,8 @@ class OnboardingScreen extends StatelessWidget {
             Text('WakeGuard', style: theme.textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Wake up, complete a challenge, and check you’re still up. '
-              'Private, offline and free. Let’s get your first alarm ready.',
+              'Start your morning with an alarm and a wake-up challenge. '
+              'Free, with no ads or accounts. Let’s get your first alarm ready.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 24),
@@ -54,10 +55,7 @@ class OnboardingScreen extends StatelessWidget {
             _Step(
               icon: Icons.volume_up_outlined,
               title: 'Check the alarm volume',
-              body:
-                  'A muted alarm stream is silent no matter how '
-                  'reliable the scheduling is. This plays the real '
-                  'tone for ten seconds.',
+              body: DeviceGuidance.volumeSetup(theme.platform),
               button: FilledButton.tonal(
                 onPressed: viewModel.playing
                     ? viewModel.stopTest
@@ -68,11 +66,11 @@ class OnboardingScreen extends StatelessWidget {
             if (viewModel.hasExactAlarmCheck)
               _Step(
                 icon: Icons.health_and_safety_outlined,
-                title: 'Exact alarms',
+                title: 'Ring at the time you choose',
                 body:
-                    'Android may delay an alarm by minutes unless it '
-                    'is allowed to fire exactly. The Health tab shows '
-                    'this and the rest.',
+                    'Allow WakeGuard under Alarms & reminders in your phone’s '
+                    'settings. This lets alarms ring on time, even with the screen off. '
+                    'You can review this in Health.',
                 button: FilledButton.tonal(
                   onPressed: () => _allowExactAlarms(context),
                   child: const Text('Allow exact alarms'),

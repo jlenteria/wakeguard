@@ -1,5 +1,17 @@
 import 'alarm.dart';
 
+/// Shared by the streak and its weekday display. A dismissal awaiting a
+/// configured check-in does not count until confirmed or its follow-up is done.
+bool isCompletedWakeUpEvent(Map<String, Object?> entry) {
+  final event = entry['event'];
+  if (event != null && event != 'dismissed' && event != 'confirmed') {
+    return false;
+  }
+  return !(event == 'dismissed' &&
+      ((entry['checkInMinutes'] as num?)?.toInt() ?? 0) > 0 &&
+      entry['followUp'] != true);
+}
+
 /// Wake-up statistics derived from native outcomes, never from starts alone.
 class WakeUpStats {
   const WakeUpStats({
@@ -40,8 +52,7 @@ WakeUpStats computeWakeUpStats(
   String? lastMethod;
 
   for (final entry in entries) {
-    if (entry['event'] != null && entry['event'] != 'dismissed' && entry['event'] != 'confirmed') continue;
-    if (entry['event'] == 'dismissed' && ((entry['checkInMinutes'] as num?)?.toInt() ?? 0) > 0 && entry['followUp'] != true) continue;
+    if (!isCompletedWakeUpEvent(entry)) continue;
     final millis = entry['at'];
     if (millis is! num) continue;
     if (millis <= 0 || millis > current.millisecondsSinceEpoch) continue;
@@ -67,14 +78,38 @@ WakeUpStats computeWakeUpStats(
         final raw = entry['scheduledAt'];
         if (raw is! num) return false;
         final at = DateTime.fromMillisecondsSinceEpoch(raw.toInt());
-        return at.year == cursor.year && at.month == cursor.month && at.day == cursor.day;
+        return at.year == cursor.year &&
+            at.month == cursor.month &&
+            at.day == cursor.day;
       });
-      final scheduled = alarms == null || !alarms.any((a) => a.enabled && a.isRepeating) || alarms.any((alarm) =>
-          alarm.enabled && alarm.isRepeating && alarm.isScheduledFor(cursor) &&
-          (alarm.createdAt == null || !DateTime(alarm.createdAt!.year, alarm.createdAt!.month, alarm.createdAt!.day).isAfter(cursor)) &&
-          !(alarm.skipUntilMillis > 0 && DateTime.fromMillisecondsSinceEpoch(alarm.skipUntilMillis).year == cursor.year &&
-            DateTime.fromMillisecondsSinceEpoch(alarm.skipUntilMillis).month == cursor.month &&
-            DateTime.fromMillisecondsSinceEpoch(alarm.skipUntilMillis).day == cursor.day));
+      final scheduled =
+          alarms == null ||
+          !alarms.any((a) => a.enabled && a.isRepeating) ||
+          alarms.any(
+            (alarm) =>
+                alarm.enabled &&
+                alarm.isRepeating &&
+                alarm.isScheduledFor(cursor) &&
+                (alarm.createdAt == null ||
+                    !DateTime(
+                      alarm.createdAt!.year,
+                      alarm.createdAt!.month,
+                      alarm.createdAt!.day,
+                    ).isAfter(cursor)) &&
+                !(alarm.skipUntilMillis > 0 &&
+                    DateTime.fromMillisecondsSinceEpoch(
+                          alarm.skipUntilMillis,
+                        ).year ==
+                        cursor.year &&
+                    DateTime.fromMillisecondsSinceEpoch(
+                          alarm.skipUntilMillis,
+                        ).month ==
+                        cursor.month &&
+                    DateTime.fromMillisecondsSinceEpoch(
+                          alarm.skipUntilMillis,
+                        ).day ==
+                        cursor.day),
+          );
       if (observed || scheduled) break;
     }
     cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);

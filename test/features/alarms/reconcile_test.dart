@@ -35,8 +35,8 @@ void main() {
       );
 
       expect(result.alarms.single.enabled, isTrue);
-      // Re-enabled natively from somewhere else, so it must be scheduled.
-      expect(result.toSchedule.map((a) => a.id), ['a']);
+      // Already scheduled natively: re-arming could cancel a pending check-in.
+      expect(result.toSchedule, isEmpty);
     });
 
     test('re-arms an alarm the platform has no record of', () {

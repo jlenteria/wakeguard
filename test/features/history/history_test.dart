@@ -2,12 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wakeguard/models/wake_up_stats.dart';
 
 List<Map<String, Object?>> _entries(List<DateTime> days) => [
-      for (final day in days)
-        {
-          'at': DateTime(day.year, day.month, day.day, 7).millisecondsSinceEpoch,
-          'method': 'face',
-        },
-    ];
+  for (final day in days)
+    {
+      'at': DateTime(day.year, day.month, day.day, 7).millisecondsSinceEpoch,
+      'method': 'face',
+    },
+];
 
 void main() {
   group('computeWakeUpStats', () {
@@ -24,10 +24,10 @@ void main() {
 
     test('counts distinct days, not dismissals', () {
       final today = DateTime(2026, 10, 8);
-      final stats = computeWakeUpStats(
-        [..._entries([today, today]), ..._entries([today.subtract(const Duration(days: 1))])],
-        now: now,
-      );
+      final stats = computeWakeUpStats([
+        ..._entries([today, today]),
+        ..._entries([today.subtract(const Duration(days: 1))]),
+      ], now: now);
 
       expect(stats.totalDays, 2);
       expect(stats.streak, 2);
@@ -70,29 +70,23 @@ void main() {
 
     test('reports the most recent dismissal', () {
       final newest = DateTime(2026, 10, 8, 7, 4);
-      final stats = computeWakeUpStats(
-        [
-          {'at': newest.millisecondsSinceEpoch, 'method': 'qr'},
-          {
-            'at': DateTime(2026, 10, 7, 7).millisecondsSinceEpoch,
-            'method': 'face',
-          },
-        ],
-        now: now,
-      );
+      final stats = computeWakeUpStats([
+        {'at': newest.millisecondsSinceEpoch, 'method': 'qr'},
+        {
+          'at': DateTime(2026, 10, 7, 7).millisecondsSinceEpoch,
+          'method': 'face',
+        },
+      ], now: now);
 
       expect(stats.lastAt, newest);
       expect(stats.lastMethod, 'qr');
     });
 
     test('ignores malformed entries instead of throwing', () {
-      final stats = computeWakeUpStats(
-        [
-          const {'at': 'not a number'},
-          {'at': DateTime(2026, 10, 8, 7).millisecondsSinceEpoch},
-        ],
-        now: now,
-      );
+      final stats = computeWakeUpStats([
+        const {'at': 'not a number'},
+        {'at': DateTime(2026, 10, 8, 7).millisecondsSinceEpoch},
+      ], now: now);
 
       expect(stats.totalDays, 1);
       expect(stats.streak, 1);

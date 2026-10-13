@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 /**
  * Maps a [StoredAlarm.soundPack] to a bundled raw resource. One pack is one tone, played identically

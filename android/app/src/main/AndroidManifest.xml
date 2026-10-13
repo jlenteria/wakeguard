@@ -72,7 +72,7 @@
             android:showOnLockScreen="true"
             android:turnScreenOn="true"
             android:showWhenLocked="true"
-            android:taskAffinity="app.wakeguard.alarm"
+            android:taskAffinity="com.bling.wakeguard"
             android:theme="@style/AlarmRingTheme" />
 
         <!-- mediaPlayback rather than specialUse: the service's only job is

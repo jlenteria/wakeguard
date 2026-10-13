@@ -1,85 +1,100 @@
-# Verification before release
+# Android verification before release
 
-The implementation includes regression tests, but they have not been executed
-by the coding agent: this project's command permissions prohibit builds/tests.
-`dart format --output=none lib test` checks parsing only, not types or runtime.
+Scope: Android only, package/application ID `com.bling.wakeguard`. iOS release
+verification is deferred. Run automated tests, analysis and source checks before
+building the signed artifacts. Passing automated checks or a build is not evidence
+of alarm delivery, classification accuracy or Play approval.
 
-The repository's `opencode.json` restricts agent-run build, test, and analysis
-commands, including Flutter/Dart checks, Gradle, and Xcode builds. Developers
-should run the checks below in their own environment; source checks alone do
-not establish that a lock-screen alarm works on a device.
+## Build and release artifact
 
-## Automated checks (developer-run)
+Follow `docs/ANDROID_RELEASE.md`, then build the signed release APK and AAB:
 
-- `flutter analyze`
-- `flutter test`
-- From `android/`: `./gradlew :app:testDebugUnitTest :app:assembleDebug`
-- `python3 tool/verify_source.py` (resource/contract/source consistency only)
+```sh
+flutter build apk --release
+flutter build appbundle --release
+```
 
-`AlarmPolicyTest` covers edit-time stale broadcasts, session/phase rejection,
-single-follow-up policy and monotonic duration across wall-clock changes/reboots.
-Flutter tests cover serialized reconciliation during an edit, disabled duplicates,
-skip/restore boundaries, check-in compatibility, outcome filtering, weekday
-streaks, QR setup and practice using the current unscheduled draft.
+Confirm the actual artifact's package, upload signature, target API 36, arm64
+native libraries and 16 KB compatibility. Upload to an internal test track and
+review Play's pre-launch report. Agent-run builds are currently blocked by
+workspace permission rules; record developer-run build results explicitly.
 
 ## Device acceptance
 
-Use short future times for repeatable checks, including on a locked device and
-with the app process absent. At least one real Android device is needed; an
-emulator is insufficient evidence for OEM, camera, volume or lock-screen behavior.
+Use at least one real Android device, including a lower-end device for object
+classification. Include current Android and the oldest supported API 24–27
+compatibility paths where devices/emulators are available. Repeat alarm-delivery
+scenarios locked, unlocked, with the Flutter process absent, and after reboot.
 
-1. Create an alarm two minutes ahead. Edit it to four minutes ahead. The old
-   time and its recovery offsets must not ring; the new time rings once.
-2. Dismiss a repeating alarm. Wait through the 15-minute recovery window.
-   No re-ring; the next repeat remains scheduled.
-3. Let a one-time alarm time out. It becomes disabled and records Missed.
-   It must not re-arm tomorrow. Snoozing a one-time session still works.
-4. Set No snooze. The ringing notification has no snooze action. Repeat with
-   5/9/15 minutes and verify the chosen delay rather than the default.
-5. Set two nearby alarms. The second queues; dismissing either stale screen
-   or stale notification must not stop the other occurrence.
-6. Skip a weekday repeat. It resumes on its next selected weekday. Restore
-   the skipped occurrence and verify the next date/time and actual delivery.
-7. Duplicate an alarm. The copy starts disabled with an independent ID.
-8. Practice each preset. Exit via Back/Exit. No audio, history, schedule change
-   or follow-up should be created. Repeat while a real alarm rings: practice
-   must be refused.
-9. Enable a three-minute Stay Awake check. Dismiss, wait for the notification,
-   verify a short system notification sound, then confirm inside one minute.
-   No follow-up; History shows Confirmed. Repeat on an upgraded installation
-   that previously created the check-in channel. Updating an already-visible
-   prompt must not replay its sound; system channel sound settings remain honored.
-10. Leave a check unanswered. Exactly one follow-up rings, has no snooze,
-    and cannot create a second check-in after dismissal or timeout.
-11. Edit/delete/disable during a pending check-in. Old prompt/confirmation and
-    deadline operations must have no effect.
-12. Kill the process during ringing/snooze/check-in. Verify token-scoped
-    recovery and a bounded timeout, then reboot before first unlock.
-13. Change wall time during a ring. Its remaining window follows elapsed time,
-    while future ordinary alarms are recalculated for local wall time.
-14. Switch Face -> Pattern while camera startup/inference is pending. No
-    camera prompt/analysis may overwrite the pattern or complete an old mode.
-15. Test camera denial, QR mismatch, no front camera, dark room and TalkBack.
-     Selected alternatives and the hold escape must remain usable.
-     Holding for one uninterrupted minute stops the alarm; releasing early
-     or leaving the screen resets the hold countdown.
-16. Use large system text, narrow screens and both themes; verify editor,
-    history and native buttons remain readable/reachable.
-17. Clear history. Streak and local history clear; existing alarms/check-ins
-    remain. Reinstalling does not restore sessions or old alarms via backup.
-18. Reboot with a one-time alarm due while the device was off. Inside the ring
-    window it rings once after unlock; outside it is recorded Missed, stays
-    disabled, and never re-arms. Repeating alarms resume at their next slot.
-    Changing wall time or time zone only recalculates future triggers.
+1. **Onboarding:** allow notifications and test the sound. Deny permissions,
+   revoke them in Settings, retry and resume the app. Blocked notifications must
+   appear in Health. Skipping onboarding must not silently arm an unusable alarm.
+   A persistence failure must report failure rather than claim completion.
+2. **Engine/save failure:** an unavailable native channel must show an error and
+   allow Retry. It must never show a successful enabled save. Failed edits must
+   retain the draft and show the configuration actually stored natively.
+3. **Edits:** create an alarm two minutes ahead, edit to four minutes. Only the
+   new primary rings. Repeat with rejected camera/check-in permission changes;
+   the old working configuration must not be presented as the failed edit.
+4. **Optional Tap:** only an explicitly selected Tap alarm has a Stop button.
+   Simple selects Tap; Challenge selects Face; Get out of bed selects Object.
+   No hold-to-stop, hold timer, random confirmation or Pattern grid appears.
+5. **Face:** practice every action, including your own left/right directions,
+   two blinks and eyes-open duration. Switch challenges during inference. Stale
+   results must not complete a different challenge. Turn the room light off/on;
+   the app must not change screen brightness or offer a brightness slider.
+6. **Object practice:** separately test Sink and Cup; Plant must not be offered.
+   Sink starts at exact-label confidence >= 0.70, then maintains at >= 0.60.
+   Cup requires >= 0.80. Completion needs at least eight matches and three seconds
+   of confirmed time. Sink dropouts up to 600ms must pause without adding time;
+   longer losses, Cup misses, inference stalls and backgrounding reset progress. Verify
+   all targets offline on first launch: no model download may be required.
+7. **Object enablement:** a target not successfully practised on this device
+   cannot be enabled. A successful practice returns to the editor with Verified
+   state; changing to an unverified target requires new practice. No reference
+   photo is stored. Live Object completion must stop audio and schedule the
+   configured Stay Awake reminder. A nearby object/photo is not proof of location;
+   do not claim that recognition verifies the user physically left bed.
+8. **QR:** two alarms sharing the Settings QR accept it after restarting. A custom
+   code remains unchanged unless explicitly replaced. Wrong/empty codes cannot
+   stop the alarm. Share and print with real destinations and scan the output.
+9. **Animations:** searching, recognised state, progress, face-step transitions
+   and success feedback remain smooth. Disable system animations; no scan-line
+   motion or transition should remain. The alarm sound stops before the success
+   animation. Progress must reflect inference rather than a decorative timer.
+10. **Camera/accessibility:** deny or revoke permission, disable camera privacy
+    access, test no/busy camera and low light. Retry and only selected alternatives
+    remain available. Use TalkBack, large text, narrow/landscape screens and both
+    Flutter themes. Instructions and controls must remain reachable.
+11. **Legacy records:** Pattern-only/invalid old alarms show Setup required and
+    remain disabled until the replacement is configured. Other selected valid
+    challenges and old history remain. Migration must not introduce Tap or start
+    a camera challenge without setup. The former app ID is a separate app, not an
+    upgrade path sharing private preferences.
+12. **Snooze/repeats:** No snooze hides the notification action. Test 5/9/15-minute
+    delays, one-time retirement, weekday repeats and process death. Practice and
+    follow-ups offer no snooze. Tomorrow's repeat survives dismissal/snooze;
+    skip/restore and disabled duplication still work without camera permission.
+13. **Stay Awake:** enable 3 minutes and dismiss using each selected challenge.
+    History must show Check-in scheduled, then Reminder shown; verify sound and
+    vibration and confirm I'm up within one minute. Confirming prevents follow-up.
+    Unanswered checks create exactly one follow-up, with no snooze or further
+    check-in. Practice creates no check-in. Block/mute the check-in channel and
+    verify Health plus explicit blocked/failed history rather than silent success.
+14. **Check-in recovery:** reboot or change time before/during/after the response
+    window. A late restored prompt reports remaining seconds; an expired prompt
+    is not shown as newly answerable. Editing/deleting/disabling an alarm cancels
+    its old pending check-in; an ordinary app reload must not cancel it.
+15. **Sessions:** nearby alarms queue without stopping each other. Stale tokens
+    cannot dismiss/snooze a later occurrence. Playback, recovery, shutdown,
+    timeout and queue draining must stay bounded; a forgotten alarm times out at
+    15 minutes and records Missed rather than a successful wake-up.
+16. **History/settings/privacy:** settings persist through restart; transient
+    history reads retain the previous list; clearing history does not clear
+    alarms/check-ins. Stats are labelled as saved-history totals. Settings shows
+    the full Privacy policy and correct contact; the public Netlify policy URL
+    serves that policy. Support shows only the QR, without account/recipient rows.
 
-Record device model, Android version, build revision, scenario and actual result.
-For shared QR reuse, create two QR alarms and verify both accept the QR shown
-in Settings after restarting the app. An existing custom alarm must keep its
-old code until explicitly saved with "Use shared wake-up QR". Generating a custom
-code for one alarm must not change the shared code or any other alarm.
-With camera permission denied, saving a Face/QR draft must leave stored alarms
-unchanged and open Health. Grant permission through Camera's Fix action, then
-use Return to alarm to save the retained draft. Pattern/Tap alarms must still
-save without camera permission; disabling an existing alarm must always work.
-Source-level improvements are not measured battery/performance results: profile
-camera inference, app startup, memory and APK size after a successful build.
+Record device model, Android version, build revision, selected target/challenge,
+scenario and actual result. Performance was reported fixed by the developer;
+new camera inference and animation performance still need device observation.

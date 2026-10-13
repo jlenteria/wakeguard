@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B11A00000000000000000001 /* MotivationalQuotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11A00000000000000000002 /* MotivationalQuotes.swift */; };
+		B11A00000000000000000003 /* motivational_quotes.json in Resources */ = {isa = PBXBuildFile; fileRef = B11A00000000000000000004 /* motivational_quotes.json */; };
 		4F9268BE4B397AACA2441B36 /* tone_pulse_gentle.caf in Resources */ = {isa = PBXBuildFile; fileRef = 9241D58A8F610CB406C209B6 /* tone_pulse_gentle.caf */; };
 		A60CF06DA8093FB09CE987B3 /* tone_pulse_firm.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5428530E0F17EB4CB92F99B9 /* tone_pulse_firm.caf */; };
 		FDEE5EB205D9CA9901D34150 /* tone_pulse_urgent.caf in Resources */ = {isa = PBXBuildFile; fileRef = E20A27F80FF385AD2D5EA2C1 /* tone_pulse_urgent.caf */; };
@@ -78,6 +80,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B11A00000000000000000002 /* MotivationalQuotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotivationalQuotes.swift; sourceTree = "<group>"; };
+		B11A00000000000000000004 /* motivational_quotes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = motivational_quotes.json; path = ../resources/motivational_quotes.json; sourceTree = SOURCE_ROOT; };
 		9241D58A8F610CB406C209B6 /* tone_pulse_gentle.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = tone_pulse_gentle.caf; sourceTree = "<group>"; };
 		5428530E0F17EB4CB92F99B9 /* tone_pulse_firm.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = tone_pulse_firm.caf; sourceTree = "<group>"; };
 		E20A27F80FF385AD2D5EA2C1 /* tone_pulse_urgent.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = tone_pulse_urgent.caf; sourceTree = "<group>"; };
@@ -192,6 +196,8 @@
 				C8CF5CCF483B52BAEE781A1E /* AlarmActionHandler.swift */,
 				468BD289C68BF661463CED9E /* AlarmEngineChannel.swift */,
 				2E65863AAE7865063030F3E0 /* WakeChallengeViewController.swift */,
+				B11A00000000000000000002 /* MotivationalQuotes.swift */,
+				B11A00000000000000000004 /* motivational_quotes.json */,
 				64A10A9146BACBEDE4847BF0 /* HoldToStopButton.swift */,
 				9241D58A8F610CB406C209B6 /* tone_pulse_gentle.caf */,
 				5428530E0F17EB4CB92F99B9 /* tone_pulse_firm.caf */,
@@ -328,6 +334,7 @@
 				7ADBCE1E38C2A24433BF9BFC /* tone_gong_urgent.caf in Resources */,
 				C042617490CAF6A2CC77EEC1 /* tone_gong_critical.caf in Resources */,
 				C0B655B06A16BE0E4C37E0DF /* Localizable.strings in Resources */,
+				B11A00000000000000000003 /* motivational_quotes.json in Resources */,
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
@@ -391,6 +398,7 @@
 				DC5928CD5F5A237A36F96378 /* AlarmActionHandler.swift in Sources */,
 				1E9EC8305B8620B2491D7C0F /* AlarmEngineChannel.swift in Sources */,
 				97553FE994023F9A1D6BD7D0 /* WakeChallengeViewController.swift in Sources */,
+				B11A00000000000000000001 /* MotivationalQuotes.swift in Sources */,
 				9D8C6970EAA232180492DC4D /* HoldToStopButton.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,

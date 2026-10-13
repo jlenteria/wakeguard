@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 native = root / "android/app/src/main"
-sources = list((native / "kotlin/app/wakeguard").glob("*.kt"))
+sources = list((native / "kotlin/com/bling/wakeguard").glob("*.kt"))
 text = "\n".join(path.read_text() for path in sources)
 strings = ET.parse(native / "res/values/strings.xml").getroot()
 declared = {entry.attrib["name"] for entry in strings if entry.tag == "string"}
@@ -20,7 +20,7 @@ for node in manifest.findall("./application/receiver") + manifest.findall("./app
     name = node.attrib.get(android + "name", "")
     if name.startswith("."):
         assert name[1:] in classes, f"Missing manifest component {name}"
-defaults = (native / "kotlin/app/wakeguard/AlarmStore.kt").read_text()
+defaults = (native / "kotlin/com/bling/wakeguard/AlarmStore.kt").read_text()
 known = set(re.findall(r"(?:const val|val|fun)\s+(\w+)", defaults))
 references = set(re.findall(r"AlarmDefaults\.(\w+)", text))
 assert not references - known, f"Missing shared constants/helpers: {references - known}"

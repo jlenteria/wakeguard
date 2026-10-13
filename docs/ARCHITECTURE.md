@@ -6,17 +6,19 @@ a live Dart isolate.
 
 ## Channel contract (version 2)
 
-`app.wakeguard/alarm` accepts `schedule`, `cancel`, `alarms`, `history`,
-`clearHistory`, `practice`, `dismiss`, health/permissions and sound previews.
+`com.bling.wakeguard/alarm` accepts `schedule`, `cancel`, `alarms`, `history`,
+`clearHistory`, `practice`, `objectTargetVerified`, `dismiss`, health/permissions and sound previews.
 Capabilities report `contractVersion`, `canPractice` and `canCheckIn` so a
 platform lacking these features does not offer the controls. Android schedules
 require version 2; Flutter sends it separately from persisted alarm JSON.
 
-The editor supplies configuration. Native returns `enabled` and `nextTriggerAt`.
+The editor supplies configuration. Android returns the complete native configuration,
+`enabled`, object-practice state and `nextTriggerAt`.
 The controller serializes saves, deletes, reloads and health/history reads through
 one queue; internal reloads do not enqueue recursively. Native-confirmed trigger
-times are preferred over UI calculations. Failed scheduling disables the native
-record and is surfaced to the user; the draft is retained.
+times are preferred over UI calculations. Failed edits restore the previous native
+primary where possible and roll back the mirror; failed saves retain the draft.
+Engine discovery is retryable and an unavailable engine cannot report a successful save.
 
 ## Configuration versus occurrences
 
@@ -85,11 +87,27 @@ Practice uses the same native screen but no ringing session, audio, scheduling
 or history. It has Back and Exit controls and is refused while an alarm rings.
 Normal ringing validates its token before showing a challenge.
 
-Camera acquisition/detectors are lazy. Pattern/tap modes do not bind a camera.
-Analysis targets 640x480, throttles frames, and permits one in-flight inference.
-Generation checks ignore callbacks from an old mode or activity; stop/destroy
-unbinds the camera. Pattern cells scale to screen width and announce flashes for
-accessibility. Every configuration retains hold-to-stop.
+Camera acquisition/detectors are lazy. Optional Tap does not bind a camera.
+Analysis targets 640x480, throttles frames to at most one per 180ms, and permits
+one in-flight inference. Generation/lifecycle checks reject stale callbacks.
+Face uses the front camera; Object/QR use the rear. No brightness override or
+hold-to-stop exists on Android. Only selected challenges may dismiss.
+
+Object recognition uses the bundled ML Kit image-labeler and exact Sink (7) and
+Cup (315) labels. Sink starts at confidence >= 0.70 and stays tracked at >= 0.60;
+Cup requires >= 0.80. At least eight matches and three seconds of confirmed time
+are required. Only intervals between consecutive matching frames add time.
+Sink dropouts up to 600ms pause progress; longer losses, inference gaps over 700ms,
+and any Cup miss reset it. Plant is no longer selectable; saved Plant object alarms
+are disabled and require supported-target setup without retaining Plant verification.
+Successful Object practice records a device-local verification boolean.
+There are no reference photos, cloud inference or first-run model downloads.
+The animated guide is a framing aid, not a claimed object bounding box.
+
+Pattern-only/invalid legacy configurations become disabled Object drafts marked
+Setup required. Other valid selected challenges are preserved. Old history
+labels remain readable. Object recognition encourages target placement outside
+the bedroom but cannot prove location or distinguish an object from every photo.
 
 The Flutter app theme listens only to settings. Alarm rows and history use lazy
 lists; visible countdowns refresh once per minute while foregrounded. Audio is
@@ -116,6 +134,7 @@ history. QR sharing is an explicit user action through the platform share sheet.
 
 ## Verification
 
-See `docs/VERIFICATION.md`. Dart parser checks and source/resource checks can run
-under the current harness permissions. Flutter/Gradle builds, analysis and tests
-are denied by `opencode.json`, so runtime verification must be done externally.
+See `docs/VERIFICATION.md` and `docs/ANDROID_RELEASE.md`. This session follows the
+developer's build-only verification request. Workspace permissions currently deny
+agent-run Flutter/Gradle builds; a native build and real-device verification are
+still needed. Source review is not proof of alarm delivery or detector accuracy.

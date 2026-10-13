@@ -10,18 +10,18 @@ enum AlarmSoundPack {
   gong;
 
   String get label => switch (this) {
-        pulse => 'Pulse (gentle beeps)',
-        siren => 'Siren (rising sweep)',
-        radar => 'Radar (fast pips)',
-        gong => 'Gong (metal strikes)',
-      };
+    pulse => 'Pulse (gentle beeps)',
+    siren => 'Siren (rising sweep)',
+    radar => 'Radar (fast pips)',
+    gong => 'Gong (metal strikes)',
+  };
 
   String get description => switch (this) {
-        pulse => 'Least abrasive. Best if other sounds irritate you.',
-        siren => 'The classic. Most reliable at waking most people.',
-        radar => 'Short high pips. Cuts through a noisy room.',
-        gong => 'Harshest. Hardest to sleep through, easiest to resent.',
-      };
+    pulse => 'Least abrasive. Best if other sounds irritate you.',
+    siren => 'The classic. Most reliable at waking most people.',
+    radar => 'Short high pips. Cuts through a noisy room.',
+    gong => 'Harshest. Hardest to sleep through, easiest to resent.',
+  };
 }
 
 /// Ways out of a ring, deliberately per-alarm rather than a global setting.
@@ -29,17 +29,30 @@ enum EscapeKind {
   tap,
   face,
 
-  /// A memorised cell sequence; works in the dark with no permissions.
-  pattern,
+  /// Recognise a chosen object away from bed using the rear camera.
+  object,
 
   qr;
 
   String get label => switch (this) {
-        tap => 'Tap to stop',
-        face => 'Face',
-        pattern => 'Pattern',
-        qr => 'QR code',
-      };
+    tap => 'Tap to stop',
+    face => 'Face',
+    object => 'Find an object',
+    qr => 'QR code',
+  };
+}
+
+/// Specific labels present in the bundled offline model; not broad categories.
+enum WakeObject {
+  sink(
+    'Sink',
+    'Use a bathroom or kitchen sink. Show the whole basin and faucet in good light, and hold your phone steady.',
+  ),
+  cup('Cup', 'Place a cup in the kitchen, away from your bed.');
+
+  const WakeObject(this.label, this.description);
+  final String label;
+  final String description;
 }
 
 class Alarm {
@@ -57,6 +70,9 @@ class Alarm {
     this.snoozeMinutes = defaultSnoozeMinutes,
     this.escapes = defaultEscapes,
     this.checkInMinutes = 0,
+    this.objectTarget = WakeObject.sink,
+    this.objectVerified = false,
+    this.needsSetup = false,
     this.skipUntilMillis = 0,
     this.scheduledAtMillis,
     this.createdAt,
@@ -69,16 +85,12 @@ class Alarm {
   /// record never silently removes a way out.
   static const Set<EscapeKind> allEscapes = {
     EscapeKind.face,
-    EscapeKind.pattern,
+    EscapeKind.object,
     EscapeKind.qr,
   };
 
-  /// Escapes a brand-new alarm offers: the two needing no setup. QR is excluded
-  /// because an unusable escape is a button pointing at nothing.
-  static const Set<EscapeKind> defaultEscapes = {
-    EscapeKind.face,
-    EscapeKind.pattern,
-  };
+  /// Face needs no object enrollment or printed code. Tap is explicitly opt-in.
+  static const Set<EscapeKind> defaultEscapes = {EscapeKind.face};
 
   /// Matches [DateTime.weekday]: 1 = Monday ... 7 = Sunday.
   final Set<int> weekdays;
@@ -101,13 +113,20 @@ class Alarm {
   /// Snooze window in minutes; 0 means this alarm cannot be snoozed.
   final int snoozeMinutes;
 
-  /// Ways out of the ring; the one-minute hold is always available, since no
-  /// configuration may leave a user with no way out of a live alarm.
+  /// Only these selected challenges may successfully dismiss the alarm.
   final Set<EscapeKind> escapes;
 
   /// Opt-in follow-up check after dismissal. Zero disables it.
   final int checkInMinutes;
+
+  final WakeObject objectTarget;
+  final bool objectVerified;
+
+  /// Legacy Pattern-only alarms are disabled until their replacement is set up.
+  final bool needsSetup;
+
   final int skipUntilMillis;
+
   /// Native-confirmed primary trigger, rather than a UI estimate.
   final int? scheduledAtMillis;
 
@@ -128,19 +147,17 @@ class Alarm {
     final now = from ?? DateTime.now();
     final skipped = DateTime.fromMillisecondsSinceEpoch(skipUntilMillis);
     final start = skipped.isAfter(now) ? skipped : now;
-    var candidate = DateTime(
-      start.year,
-      start.month,
-      start.day,
-      hour,
-      minute,
-    );
+    var candidate = DateTime(start.year, start.month, start.day, hour, minute);
     // 8 days covers any weekly pattern.
     for (var i = 0; i <= 8; i++) {
       final probe = i == 0
           ? candidate
           : DateTime(start.year, start.month, start.day + i, hour, minute);
-      if (probe.isAfter(start) && probe.millisecondsSinceEpoch > skipUntilMillis && isScheduledFor(probe)) return probe;
+      if (probe.isAfter(start) &&
+          probe.millisecondsSinceEpoch > skipUntilMillis &&
+          isScheduledFor(probe)) {
+        return probe;
+      }
     }
     throw StateError('Alarm weekdays must contain at least one valid weekday');
   }
@@ -159,55 +176,77 @@ class Alarm {
     int? snoozeMinutes,
     Set<EscapeKind>? escapes,
     int? checkInMinutes,
+    WakeObject? objectTarget,
+    bool? objectVerified,
+    bool? needsSetup,
     int? skipUntilMillis,
-  }) =>
-      Alarm(
-        id: id ?? this.id,
-        hour: hour ?? this.hour,
-        minute: minute ?? this.minute,
-        label: label ?? this.label,
-        enabled: enabled ?? this.enabled,
-        repeatDaily: repeatDaily ?? this.repeatDaily,
-        weekdays: weekdays ?? this.weekdays,
-        qrValue: qrValue ?? this.qrValue,
-        difficulty: difficulty ?? this.difficulty,
-        soundPack: soundPack ?? this.soundPack,
-        snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
-        escapes: escapes ?? this.escapes,
-        checkInMinutes: checkInMinutes ?? this.checkInMinutes,
-        skipUntilMillis: skipUntilMillis ?? this.skipUntilMillis,
-        createdAt: createdAt,
-      );
+  }) => Alarm(
+    id: id ?? this.id,
+    hour: hour ?? this.hour,
+    minute: minute ?? this.minute,
+    label: label ?? this.label,
+    enabled: enabled ?? this.enabled,
+    repeatDaily: repeatDaily ?? this.repeatDaily,
+    weekdays: weekdays ?? this.weekdays,
+    qrValue: qrValue ?? this.qrValue,
+    difficulty: difficulty ?? this.difficulty,
+    soundPack: soundPack ?? this.soundPack,
+    snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
+    escapes: escapes ?? this.escapes,
+    checkInMinutes: checkInMinutes ?? this.checkInMinutes,
+    objectTarget: objectTarget ?? this.objectTarget,
+    objectVerified: objectVerified ?? this.objectVerified,
+    needsSetup: needsSetup ?? this.needsSetup,
+    skipUntilMillis: skipUntilMillis ?? this.skipUntilMillis,
+    createdAt: createdAt,
+  );
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'hour': hour,
-        'minute': minute,
-        'label': label,
-        'enabled': enabled,
-        'repeatDaily': repeatDaily,
-        'weekdays': weekdays.toList(),
-        'qrValue': qrValue,
-        'difficulty': difficulty.name,
-        'soundPack': soundPack.name,
-        'snoozeMinutes': snoozeMinutes,
-        'escapes': escapes.map((e) => e.name).toList(),
-        'checkInMinutes': checkInMinutes,
-        'skipUntilMillis': skipUntilMillis,
-        'createdAt': createdAt?.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'hour': hour,
+    'minute': minute,
+    'label': label,
+    'enabled': enabled,
+    'repeatDaily': repeatDaily,
+    'weekdays': weekdays.toList(),
+    'qrValue': qrValue,
+    'difficulty': difficulty.name,
+    'soundPack': soundPack.name,
+    'snoozeMinutes': snoozeMinutes,
+    'escapes': escapes.map((e) => e.name).toList(),
+    'checkInMinutes': checkInMinutes,
+    'objectTarget': objectTarget.name,
+    'objectVerified': objectVerified,
+    'needsSetup': needsSetup,
+    'skipUntilMillis': skipUntilMillis,
+    'createdAt': createdAt?.millisecondsSinceEpoch,
+  };
 
   factory Alarm.fromJson(Map<String, Object?> json) {
     final rawWeekdays = json['weekdays'];
+    final rawEscapes = json['escapes'];
+    final validNames = EscapeKind.values.map((e) => e.name).toSet();
+    final validObjectTarget = WakeObject.values.any(
+      (target) => target.name == json['objectTarget'],
+    );
+    final requiresSetup =
+        json['needsSetup'] == true ||
+        (rawEscapes is List &&
+            (!rawEscapes.any(validNames.contains) ||
+                (rawEscapes.contains('object') && !validObjectTarget)));
     return Alarm(
       id: json['id'] as String? ?? generateId(),
       hour: (json['hour'] as int? ?? 7).clamp(0, 23),
       minute: (json['minute'] as int? ?? 0).clamp(0, 59),
       label: json['label'] as String? ?? 'Wake up',
-      enabled: json['enabled'] as bool? ?? true,
+      enabled: !requiresSetup && (json['enabled'] as bool? ?? true),
       repeatDaily: json['repeatDaily'] as bool? ?? true,
       weekdays: rawWeekdays is List
-          ? rawWeekdays.whereType<num>().map((n) => n.toInt()).where((n) => n >= 1 && n <= 7).toSet()
+          ? rawWeekdays
+                .whereType<num>()
+                .map((n) => n.toInt())
+                .where((n) => n >= 1 && n <= 7)
+                .toSet()
           : const <int>{},
       qrValue: json['qrValue'] as String? ?? '',
       difficulty: ChallengeDifficulty.values.firstWhere(
@@ -219,12 +258,19 @@ class Alarm {
         (s) => s.name == json['soundPack'],
         orElse: () => AlarmSoundPack.pulse,
       ),
-      snoozeMinutes: ((json['snoozeMinutes'] as num?) ??
-              defaultSnoozeMinutes)
+      snoozeMinutes: ((json['snoozeMinutes'] as num?) ?? defaultSnoozeMinutes)
           .toInt()
           .clamp(0, 60),
       escapes: _parseEscapes(json['escapes']),
-      checkInMinutes: const [0, 3, 5, 10].contains(json['checkInMinutes']) ? json['checkInMinutes'] as int : 0,
+      checkInMinutes: const [0, 3, 5, 10].contains(json['checkInMinutes'])
+          ? json['checkInMinutes'] as int
+          : 0,
+      objectTarget: WakeObject.values.firstWhere(
+        (value) => value.name == json['objectTarget'],
+        orElse: () => WakeObject.sink,
+      ),
+      objectVerified: validObjectTarget && json['objectVerified'] == true,
+      needsSetup: requiresSetup,
       skipUntilMillis: (json['skipUntilMillis'] as num?)?.toInt() ?? 0,
       scheduledAtMillis: (json['nextTriggerAt'] as num?)?.toInt(),
       createdAt: json['createdAt'] == null
@@ -233,15 +279,14 @@ class Alarm {
     );
   }
 
-  /// Unknown names are dropped; an empty/missing set means all escapes, so an
-  /// alarm never loses a way out that it used to offer.
+  /// Legacy Pattern-only alarms become Object drafts requiring setup, never Tap.
   static Set<EscapeKind> _parseEscapes(Object? raw) {
-    if (raw is! List) return allEscapes;
+    if (raw is! List) return defaultEscapes;
     final parsed = <EscapeKind>{
       for (final name in raw.whereType<String>())
         ...EscapeKind.values.where((e) => e.name == name),
     };
-    return parsed.isEmpty ? allEscapes : parsed;
+    return parsed.isEmpty ? {EscapeKind.object} : parsed;
   }
 
   static String generateId() {
@@ -268,8 +313,8 @@ enum ChallengeDifficulty {
   final int stepCount;
 
   String get label => switch (this) {
-        ChallengeDifficulty.gentle => 'Gentle',
-        ChallengeDifficulty.moderate => 'Moderate',
-        ChallengeDifficulty.strict => 'Strict',
-      };
+    ChallengeDifficulty.gentle => 'Gentle',
+    ChallengeDifficulty.moderate => 'Moderate',
+    ChallengeDifficulty.strict => 'Strict',
+  };
 }

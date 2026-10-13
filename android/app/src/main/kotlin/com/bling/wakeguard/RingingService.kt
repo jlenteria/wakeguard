@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -16,8 +16,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
-import androidx.media.app.NotificationCompat as MediaNotificationCompat
 
 /**
  * Rings the alarm and walks the escalation ladder. START_REDELIVER_INTENT resumes after a kill;
@@ -26,7 +26,9 @@ import androidx.media.app.NotificationCompat as MediaNotificationCompat
 class RingingService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "wakeguard.ringing.v2"
+        // Sound/vibration settings are immutable after a channel is created.
+        private const val CHANNEL_ID = "wakeguard.ringing.audible.v3"
+        private val NOTIFICATION_VIBRATION = longArrayOf(0, 500, 300, 500)
         private const val NOTIFICATION_ID_BASE = 0x5700
         private const val KEY_ELAPSED_MS = "elapsedMs"
         private const val KEY_ALARM_ID = "alarmId"
@@ -115,6 +117,9 @@ class RingingService : Service() {
                 .setContentTitle(context.getString(R.string.app_name))
                 .setContentText(context.getString(R.string.alarm_dismissed))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioManager.STREAM_ALARM)
+                .setVibrate(NOTIFICATION_VIBRATION)
+                .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setTimeoutAfter(5_000L)
                 .build()
@@ -127,14 +132,18 @@ class RingingService : Service() {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Active WakeGuard alarms"
-                // Channel stays silent; audio comes from the MediaPlayer to avoid a doubled copy.
-                setSound(null, null)
+                // A short notification chime also covers a refused foreground-service
+                // start. The selected alarm tone still loops through MediaPlayer.
+                setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build())
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 enableVibration(true)
-                vibrationPattern = longArrayOf(0, 500, 300, 500)
+                vibrationPattern = NOTIFICATION_VIBRATION
                 enableLights(true)
                 setShowBadge(false)
-                // No setBypassDnd: needs ACCESS_NOTIFICATION_POLICY, and DND does not silence STREAM_ALARM.
+                // DND behavior remains controlled by the user's alarm policy.
             }
             context.getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
@@ -145,6 +154,9 @@ class RingingService : Service() {
             StoredAlarm.notificationIdFor("ring:$id")
 
         fun buildNotification(context: Context, alarm: StoredAlarm): Notification {
+            val prompt = if (alarm.snoozeMinutes > 0)
+                context.getString(R.string.ringing_prompt_with_snooze, alarm.snoozeMinutes)
+                else context.getString(R.string.ringing_prompt)
             val fullScreen = PendingIntent.getActivity(
                 context,
                 alarm.notificationId,
@@ -154,9 +166,13 @@ class RingingService : Service() {
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_wakeguard_alarm)
                 .setContentTitle(alarm.label)
-                .setContentText(context.getString(R.string.ringing_prompt))
+                .setContentText(prompt)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioManager.STREAM_ALARM)
+                .setVibrate(NOTIFICATION_VIBRATION)
+                // Recovery refreshes should not replay the chime over the looping tone.
+                .setOnlyAlertOnce(true)
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -167,13 +183,15 @@ class RingingService : Service() {
                     // Snooze is per-alarm; no snooze configured means no way to surrender it.
                     if (alarm.snoozeMinutes > 0) {
                         addAction(
-                            0,
-                            context.getString(R.string.action_snooze),
+                            android.R.drawable.ic_lock_idle_alarm,
+                            context.getString(R.string.snooze_for_minutes, alarm.snoozeMinutes),
                             snoozeIntent(context, alarm),
                         )
                     }
                 }
-                .setStyle(MediaNotificationCompat.MediaStyle())
+                // Standard actions show a labeled Snooze button when expanded;
+                // MediaStyle renders compact actions as icons without the label.
+                .setStyle(NotificationCompat.BigTextStyle().bigText(prompt))
                 .build()
         }
 
@@ -182,11 +200,7 @@ class RingingService : Service() {
             PendingIntent.getBroadcast(
                 context,
                 alarm.notificationId + 7,
-                Intent(context, SnoozeReceiver::class.java).apply {
-                    data = android.net.Uri.parse("wakeguard://snooze/${alarm.id}")
-                    putExtra(KEY_ALARM_ID, alarm.id)
-                    putExtra(AlarmSessions.EXTRA_SESSION, AlarmSessions.get(context, alarm.id)?.token)
-                },
+                AlarmSnooze.actionIntent(context, alarm.id, AlarmSessions.get(context, alarm.id)?.token),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
     }
@@ -214,6 +228,7 @@ class RingingService : Service() {
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var focusRequest: AudioFocusRequest? = null
+    private val legacyFocusListener = AudioManager.OnAudioFocusChangeListener { }
     private var alarmId: String? = null
     private var sessionId: String? = null
     private var stepCount: Int = 2
@@ -355,6 +370,12 @@ class RingingService : Service() {
 
     private fun requestAudioFocus(): Boolean {
         val audioManager = getSystemService(AudioManager::class.java)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            @Suppress("DEPRECATION")
+            return audioManager.requestAudioFocus(legacyFocusListener,
+                AudioManager.STREAM_ALARM, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) ==
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -475,8 +496,13 @@ class RingingService : Service() {
         releasePlayer()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        focusRequest?.let {
-            runCatching { getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let {
+                runCatching { getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it) }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching { getSystemService(AudioManager::class.java).abandonAudioFocus(legacyFocusListener) }
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager.cancel(notificationId(alarmId))

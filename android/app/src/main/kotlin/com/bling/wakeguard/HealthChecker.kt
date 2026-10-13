@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.app.Activity
 import android.app.AlarmManager
@@ -37,10 +37,10 @@ object HealthChecker {
         add(
             health(
                 id = "exact_alarm",
-                label = "Exact alarms",
+                label = "Alarms & reminders",
                 passing = canScheduleExactAlarms(context),
-                ok = "Alarms fire to the minute, even while the screen is off.",
-                bad = "Without this, Android may delay your alarm by minutes.",
+                ok = "WakeGuard is allowed to ring at the time you choose, even with the screen off.",
+                bad = "Allow WakeGuard under Alarms & reminders in your phone’s settings so alarms can ring on time.",
                 action = "exact_alarm",
             ),
         )
@@ -50,8 +50,8 @@ object HealthChecker {
                 id = "alarm_volume",
                 label = "Alarm volume",
                 passing = alarmStreamVolume(context) > 0,
-                ok = "The alarm stream is audible.",
-                bad = "The alarm stream is at zero. Your alarm will be silent.",
+                ok = "Alarm volume is above zero. Play a test to check that it is loud enough.",
+                bad = "Alarm volume is set to zero. Raise Alarm volume in your phone’s sound settings.",
                 action = "alarm_volume",
             ),
         )
@@ -61,8 +61,8 @@ object HealthChecker {
                 id = "full_screen",
                 label = "Full-screen alarm",
                 passing = canUseFullScreenIntent(context),
-                ok = "The wake challenge appears over the lock screen.",
-                bad = "The challenge may appear as a plain notification instead.",
+                ok = "WakeGuard can show the challenge when your phone is locked.",
+                bad = "You may need to tap the alarm notification to open the challenge. Allow full-screen alarms in your phone’s settings.",
                 action = "full_screen",
                 // The alarm rings either way; only presentation changes, so do not block saving.
                 severity = HealthSeverityValue.warning,
@@ -71,18 +71,19 @@ object HealthChecker {
 
         // Report the real permission before saving; Dart checks the draft's escapes to block.
         val faceUsed = AlarmStore.all(context).any { it.enabled &&
-            (AlarmDefaults.ESCAPE_FACE in it.escapes || (AlarmDefaults.ESCAPE_QR in it.escapes && it.qrValue.isNotBlank())) }
+            (AlarmDefaults.ESCAPE_FACE in it.escapes || AlarmDefaults.ESCAPE_OBJECT in it.escapes ||
+                (AlarmDefaults.ESCAPE_QR in it.escapes && it.qrValue.isNotBlank())) }
         add(
             health(
                 id = "camera",
                 label = "Camera permission",
                 passing = hasCameraPermission(context),
                 ok = if (faceUsed) {
-                    "Face and QR challenges are available."
+                    "Face, Object and QR challenges are available."
                 } else {
                     "No enabled alarm needs the camera."
                 },
-                bad = "Enable Camera in app permissions before saving or enabling Face/QR alarms. Pattern and Tap alarms do not need it.",
+                bad = "Allow Camera access to use Face, Find an object or QR challenges. Tap to stop does not need the camera.",
                 action = "camera",
                 // Globally advisory; blocking only for a Face/QR draft.
                 severity = HealthSeverityValue.warning,
@@ -93,13 +94,31 @@ object HealthChecker {
             health(
                 id = "notification_permission",
                 label = "Notification permission",
-                passing = hasNotificationPermission(context),
+                passing = hasNotificationPermission(context) && androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled(),
                 ok = "WakeGuard can show the alarm notification.",
-                bad = "Blocked since Android 13. The alarm would ring silently " +
-                    "with no visible notification.",
+                bad = "Allow WakeGuard notifications in your phone’s settings to see ringing alarms and open their challenges.",
                 action = "notification_permission",
             ),
         )
+
+        add(health(
+            id = "checkin_notification",
+            label = "Stay Awake notifications",
+            passing = StayAwake.notificationsAvailable(context),
+            ok = "WakeGuard can ask if you’re still up and show the I'm up button.",
+            bad = "Allow Stay Awake reminders in WakeGuard’s notification settings before turning on check-ins.",
+            action = "checkin_notification",
+            severity = HealthSeverityValue.warning,
+        ))
+        add(health(
+            id = "checkin_sound",
+            label = "Stay Awake reminder sound",
+            passing = StayAwake.remindersAudible(context),
+            ok = "Stay Awake reminders can make a sound or vibrate. Check notification volume and Do Not Disturb too.",
+            bad = "Turn on sound or vibration for Stay Awake reminders in WakeGuard’s notification settings. You have 1 minute to respond.",
+            action = "checkin_notification",
+            severity = HealthSeverityValue.warning,
+        ))
 
     }
 
@@ -192,11 +211,17 @@ object HealthChecker {
                 ) {
                     requestNotificationPermission(context)
                     return null
-                } else {
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                         putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     }
+                } else {
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
                 }
+
+            "checkin_notification" -> StayAwake.settingsIntent(context)
 
             "full_screen" -> Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
                 data = Uri.parse("package:${context.packageName}")
@@ -209,7 +234,7 @@ object HealthChecker {
                     data = Uri.parse("package:${context.packageName}")
                 }
 
-            else -> return "Unknown fix action: $action"
+            else -> return "This setting cannot be opened here. Open WakeGuard’s settings on your phone."
         }
 
         // NEW_TASK is required from an application context, but breaks an Activity's back stack.
@@ -221,16 +246,16 @@ object HealthChecker {
             if (intent.resolveActivity(context.packageManager) == null &&
                 action != "notification_permission"
             ) {
-                "No settings screen on this device handles $action"
+                "Open your phone’s Settings and find WakeGuard to change this setting."
             } else {
                 context.startActivity(intent)
                 null
             }
         } catch (error: SecurityException) {
             // Almost always a missing permission; name it so the failure is diagnosable.
-            "Permission denied opening $action: ${error.message}"
+            "Your phone did not allow this settings page to open. Open Settings and find WakeGuard instead."
         } catch (error: ActivityNotFoundException) {
-            "This device has no screen for $action"
+            "This settings page is not available on your phone. Open Settings and find WakeGuard instead."
         }
     }
 }

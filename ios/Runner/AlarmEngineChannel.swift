@@ -49,7 +49,8 @@ final class AlarmEngineChannel {
                 weekdays: Set((args["weekdays"] as? [Int]) ?? []),
                 qrValue: args["qrValue"] as? String ?? "",
                 stepCount: Self.steps(forDifficulty: args["difficulty"] as? String),
-                soundPack: args["soundPack"] as? String
+                soundPack: args["soundPack"] as? String,
+                holdSeconds: args["holdSeconds"] as? Int
             )
             let triggerAt = (args["triggerAtMillis"] as? NSNumber)
                 .map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }

@@ -33,7 +33,8 @@ final class LadderScheduler {
                 : NSLocalizedString("notification.ringing.still", comment: "")
             content.categoryIdentifier = NotificationCategories.alarmCategory
             content.sound = sound(for: step.tier, pack: alarm.soundPack)
-            content.interruptionLevel = step.interrupt ? .timeSensitive : .passive
+            // Passive delivery suppresses sound; every alarm rung should alert.
+            content.interruptionLevel = step.interrupt ? .timeSensitive : .active
             content.userInfo = [
                 "alarmId": alarm.id,
                 "rung": index,
@@ -129,7 +130,7 @@ final class LadderScheduler {
     private func sound(
         for tier: EscalationTier,
         pack: String?
-    ) -> UNNotificationSound? {
+    ) -> UNNotificationSound {
         AlarmSounds.sound(pack: pack, tier: tier)
     }
 

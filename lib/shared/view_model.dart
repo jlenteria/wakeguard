@@ -36,7 +36,8 @@ class ViewModelProvider<T extends ViewModel> extends StatefulWidget {
   State<ViewModelProvider<T>> createState() => _ViewModelProviderState<T>();
 }
 
-class _ViewModelProviderState<T extends ViewModel> extends State<ViewModelProvider<T>> {
+class _ViewModelProviderState<T extends ViewModel>
+    extends State<ViewModelProvider<T>> {
   late final T _viewModel;
 
   @override
@@ -53,7 +54,7 @@ class _ViewModelProviderState<T extends ViewModel> extends State<ViewModelProvid
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: _viewModel,
-        builder: (context, _) => widget.builder(context, _viewModel),
-      );
+    listenable: _viewModel,
+    builder: (context, _) => widget.builder(context, _viewModel),
+  );
 }

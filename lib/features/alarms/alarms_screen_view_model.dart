@@ -76,7 +76,14 @@ class AlarmsScreenViewModel extends ViewModel {
   Future<bool> toggle(Alarm alarm, bool enabled) async {
     if (isBusy(alarm.id)) return false;
     return _mutate(alarm, () async {
-      await controller.setEnabled(alarm, enabled);
+      try {
+        await controller.setEnabled(alarm, enabled);
+      } catch (_) {
+        if (enabled && controller.cameraPermissionMissingFor(alarm)) {
+          return true;
+        }
+        rethrow;
+      }
       final cameraMissing =
           enabled && controller.cameraPermissionMissingFor(alarm);
       if (!cameraMissing && controller.lastError != null) {

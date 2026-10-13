@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -18,7 +18,13 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         if (intent.getBooleanExtra("snoozed", false)) {
             val session = AlarmSessions.get(context, id) ?: return
-            if (session.token != intent.getStringExtra(AlarmSessions.EXTRA_SESSION) || session.phase != "snoozed" || now < session.checkAt) return
+            if (session.token != intent.getStringExtra(AlarmSessions.EXTRA_SESSION) || session.phase != "snoozed") return
+            // Do not consume the only wake-up if a vendor delivers it a little early.
+            if (now < session.checkAt) {
+                runCatching { NativeAlarmScheduler.armSnooze(context, session, session.checkAt) }
+                    .onFailure { android.util.Log.e("WakeGuard", "Early snooze delivery could not be re-armed", it) }
+                return
+            }
             if (now - session.checkAt >= AlarmDefaults.MAX_RINGING_MS) {
                 AlarmEvents.record(context, session, "missed")
                 AlarmSessions.finish(context, session)

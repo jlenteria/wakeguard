@@ -9,7 +9,7 @@ import '../../shared/view_model.dart';
 
 /// All state for creating or editing one alarm, from the preset chips down to
 /// the text controllers and the QR secret.
-class AlarmEditorScreenViewModel extends ViewModel {
+class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
   AlarmEditorScreenViewModel({
     this.engine,
     this.existing,
@@ -34,6 +34,8 @@ class AlarmEditorScreenViewModel extends ViewModel {
         defaultSnoozeMinutes ??
         Alarm.defaultSnoozeMinutes;
     checkInMinutes = existing?.checkInMinutes ?? 0;
+    objectTarget = existing?.objectTarget ?? WakeObject.sink;
+    objectVerified = existing?.objectVerified ?? false;
     escapes = {...?existing?.escapes};
     if (escapes.isEmpty) escapes = {...Alarm.defaultEscapes};
     // A QR escape with no code (legacy/partial backup) must not block Save; drop it.
@@ -42,6 +44,8 @@ class AlarmEditorScreenViewModel extends ViewModel {
       if (escapes.isEmpty) escapes = {...Alarm.defaultEscapes};
     }
     qrController.addListener(safeNotify);
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_refreshObjectVerification());
   }
 
   /// Enables tone preview only; null disables it, keeping the editor usable in tests.
@@ -64,6 +68,8 @@ class AlarmEditorScreenViewModel extends ViewModel {
   late AlarmSoundPack soundPack;
   late int snoozeMinutes;
   late int checkInMinutes;
+  late WakeObject objectTarget;
+  late bool objectVerified;
   late Set<EscapeKind> escapes;
 
   int? preset;
@@ -175,6 +181,32 @@ class AlarmEditorScreenViewModel extends ViewModel {
     safeNotify();
   }
 
+  void setObjectTarget(WakeObject value) {
+    objectTarget = value;
+    objectVerified = false;
+    safeNotify();
+    unawaited(_refreshObjectVerification());
+  }
+
+  Future<void> _refreshObjectVerification() async {
+    final target = objectTarget;
+    try {
+      final verified = await engine?.objectTargetVerified(target.name) ?? false;
+      if (disposed || objectTarget != target) return;
+      objectVerified = verified;
+      safeNotify();
+    } catch (_) {
+      /* Native saving also checks the persisted verification. */
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshObjectVerification());
+    }
+  }
+
   void applyPreset(int index) {
     preset = index;
     difficulty = index == 2
@@ -182,14 +214,11 @@ class AlarmEditorScreenViewModel extends ViewModel {
         : ChallengeDifficulty.gentle;
     escapes = switch (index) {
       0 => {EscapeKind.tap},
-      2 => {EscapeKind.qr},
-      _ => {EscapeKind.pattern},
+      2 => {EscapeKind.object},
+      _ => {EscapeKind.face},
     };
     snoozeMinutes = index == 0 ? 9 : 0;
     checkInMinutes = index == 2 && canCheckIn ? 5 : 0;
-    if (index == 2 && qrController.text.trim().isEmpty) {
-      qrController.text = sharedQrValue ?? generateQrSecret();
-    }
     validationError = null;
     safeNotify();
   }
@@ -213,7 +242,7 @@ class AlarmEditorScreenViewModel extends ViewModel {
   /// Returns an error message, or null when practice started.
   Future<String?> practice() async {
     if (practicing || saving) return null;
-    final problem = _problem();
+    final problem = _problem(forPractice: true);
     if (problem != null) {
       validationError = problem;
       safeNotify();
@@ -223,7 +252,9 @@ class AlarmEditorScreenViewModel extends ViewModel {
     safeNotify();
     try {
       await engine?.stopAudibilitySample();
-      await engine?.practice(_build());
+      final draft = _build();
+      // Practice must offer the same selected alternatives as the real alarm.
+      await engine?.practice(draft);
       return null;
     } catch (error) {
       return '$error';
@@ -254,10 +285,16 @@ class AlarmEditorScreenViewModel extends ViewModel {
   }
 
   /// Why this alarm cannot ring as configured, or null; failures surface at 05:00.
-  String? _problem() {
-    if (escapes.isEmpty) return 'Choose at least one wake escape.';
+  String? _problem({bool forPractice = false}) {
+    if (escapes.isEmpty) return 'Choose at least one way to stop the alarm.';
+    if (!forPractice &&
+        enabled &&
+        escapes.contains(EscapeKind.object) &&
+        !objectVerified) {
+      return 'Practice scanning your ${objectTarget.label.toLowerCase()} successfully before enabling this alarm.';
+    }
     if (escapes.contains(EscapeKind.qr) && qrController.text.trim().isEmpty) {
-      return 'The QR escape needs a code. Generate one, or turn QR off.';
+      return 'The QR challenge needs a code. Create one, or turn QR off.';
     }
     return null;
   }
@@ -279,6 +316,9 @@ class AlarmEditorScreenViewModel extends ViewModel {
       snoozeMinutes: snoozeMinutes,
       escapes: {...escapes},
       checkInMinutes: checkInMinutes,
+      objectTarget: objectTarget,
+      objectVerified: objectVerified,
+      needsSetup: false,
       skipUntilMillis: 0,
       createdAt: existing?.createdAt ?? DateTime.now(),
     );
@@ -286,6 +326,7 @@ class AlarmEditorScreenViewModel extends ViewModel {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Covers dismissing the sheet without saving (drag down, back gesture).
     unawaited(
       (engine?.stopAudibilitySample() ?? Future<void>.value()).catchError(

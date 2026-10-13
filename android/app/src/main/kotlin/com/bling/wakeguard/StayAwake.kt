@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.app.AlarmManager
 import android.app.NotificationChannel
@@ -8,14 +8,58 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 
 /** Native check-ins: no Flutter isolate or long-running timer is required. */
 object StayAwake {
     const val GRACE_MS = 60_000L
-    // Channel sound is immutable; a new ID gives existing installs the audible default.
-    private const val CHANNEL = "wakeguard.checkin.audible.v2"
+    // Channel sound/vibration are immutable; migrate both defaults for existing installs.
+    private const val CHANNEL = "wakeguard.checkin.audible.v3"
+    private val NOTIFICATION_VIBRATION = longArrayOf(0, 500, 300, 500)
+
+    fun createChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(CHANNEL, "Stay Awake check-ins", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "A short sound reminds you to confirm you are still awake."
+            setSound(Settings.System.DEFAULT_NOTIFICATION_URI, AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            enableVibration(true)
+            vibrationPattern = NOTIFICATION_VIBRATION
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    fun notificationsAvailable(context: Context): Boolean {
+        if (!HealthChecker.hasNotificationPermission(context) ||
+            !NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+        createChannel(context)
+        return context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+    }
+
+    fun remindersAudible(context: Context): Boolean {
+        if (!notificationsAvailable(context)) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+        val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)
+        return channel != null && channel.importance >= NotificationManager.IMPORTANCE_DEFAULT &&
+            (channel.sound != null || channel.shouldVibrate())
+    }
+
+    fun settingsIntent(context: Context): Intent =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                putExtra(Settings.EXTRA_CHANNEL_ID, CHANNEL)
+            }
+        } else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.parse("package:${context.packageName}")
+        }
 
     private fun operation(context: Context, session: AlarmSession, stage: String): PendingIntent =
         PendingIntent.getBroadcast(context, 0, Intent(context, CheckInReceiver::class.java).apply {
@@ -25,9 +69,12 @@ object StayAwake {
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     fun schedule(context: Context, session: AlarmSession) {
+        check(session.alarm.checkInMinutes > 0 && !session.followUp) { "Check-in is not enabled for this occurrence" }
         val waiting = session.copy(phase = "checkin", checkAt = System.currentTimeMillis() + session.alarm.checkInMinutes * 60_000L)
         AlarmSessions.save(context, waiting)
         restore(context, waiting)
+        AlarmEvents.record(context, waiting, "checkin_scheduled")
+        android.util.Log.i("WakeGuard", "Check-in armed for ${session.alarm.id} in ${session.alarm.checkInMinutes} minutes")
     }
 
     fun restore(context: Context, session: AlarmSession) {
@@ -42,30 +89,36 @@ object StayAwake {
         val show = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         // A one-minute response window must not compete with idle-alarm quotas.
-        manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 500L, session.checkAt), show), operation(context, session, "prompt"))
+        // Do not show an already-expired prompt which cannot be confirmed.
+        if (now < session.checkAt + GRACE_MS) {
+            manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 500L, session.checkAt), show), operation(context, session, "prompt"))
+        } else {
+            manager.cancel(operation(context, session, "prompt"))
+        }
         manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 1000L, session.checkAt + GRACE_MS), show), operation(context, session, "deadline"))
     }
 
     fun prompt(context: Context, session: AlarmSession) {
+        if (!notificationsAvailable(context)) {
+            AlarmEvents.record(context, session, "checkin_notification_blocked")
+            android.util.Log.w("WakeGuard", "Check-in notification is blocked for ${session.alarm.id}; deadline remains armed")
+            return
+        }
+        val remainingSeconds = ((session.checkAt + GRACE_MS - System.currentTimeMillis()) / 1000L).coerceIn(1L, 60L)
         val manager = context.getSystemService(NotificationManager::class.java)
         val sound = Settings.System.DEFAULT_NOTIFICATION_URI
-        val channel = NotificationChannel(CHANNEL, "Stay Awake check-ins", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "A short sound reminds you to confirm you are still awake."
-            setSound(sound, AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build())
-        }
-        manager.createNotificationChannel(channel)
+        createChannel(context)
         manager.notify(session.alarm.notificationId xor 0x40000000,
             NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_wakeguard_alarm).setContentTitle("Still up?")
-                .setContentText("${session.alarm.label}: confirm within 1 minute. Otherwise one follow-up alarm will ring.")
+                .setContentText("${session.alarm.label}: confirm within $remainingSeconds seconds. Otherwise one follow-up alarm will ring.")
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(false).setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .setSound(sound).setOnlyAlertOnce(true)
+                .setSound(sound).setVibrate(NOTIFICATION_VIBRATION).setOnlyAlertOnce(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(operation(context, session, "confirm"))
                 .addAction(0, "I'm up", operation(context, session, "confirm")).build())
+        AlarmEvents.record(context, session, "checkin_prompted")
     }
 
     fun cancel(context: Context, session: AlarmSession) {
@@ -82,7 +135,16 @@ class CheckInReceiver : BroadcastReceiver() {
         if (session.token != intent.getStringExtra(AlarmSessions.EXTRA_SESSION) || session.phase != "checkin") return
         val now = System.currentTimeMillis()
         when (intent.getStringExtra("stage")) {
-            "prompt" -> if (now >= session.checkAt) StayAwake.prompt(context, session)
+            "prompt" -> {
+                if (now < session.checkAt) {
+                    StayAwake.restore(context, session)
+                } else if (now < session.checkAt + StayAwake.GRACE_MS) {
+                    runCatching { StayAwake.prompt(context, session) }.onFailure {
+                        AlarmEvents.record(context, session, "checkin_notification_failed")
+                        android.util.Log.e("WakeGuard", "Check-in prompt failed", it)
+                    }
+                }
+            }
             "confirm" -> {
                 if (now < session.checkAt || now > session.checkAt + StayAwake.GRACE_MS) return
                 StayAwake.cancel(context, session)
@@ -90,7 +152,10 @@ class CheckInReceiver : BroadcastReceiver() {
                 AlarmEvents.record(context, session, "confirmed", "checkin")
             }
             "deadline" -> {
-                if (now < session.checkAt + StayAwake.GRACE_MS) return
+                if (now < session.checkAt + StayAwake.GRACE_MS) {
+                    StayAwake.restore(context, session)
+                    return
+                }
                 StayAwake.cancel(context, session)
                 if (now > session.checkAt + StayAwake.GRACE_MS + AlarmDefaults.MAX_RINGING_MS) {
                     AlarmEvents.record(context, session, "checkin_expired")

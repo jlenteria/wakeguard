@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -19,6 +19,7 @@ object NativeAlarmScheduler {
     const val EXTRA_SOUND = "soundPack"
     const val EXTRA_SNOOZE = "snoozeMinutes"
     const val EXTRA_ESCAPES = "escapes"
+    const val EXTRA_OBJECT_TARGET = "objectTarget"
     const val EXTRA_TRIGGER_AT = "triggerAtMillis"
 
     /** Comma-joined escape names; extras are flat, so the set travels as text. */
@@ -68,23 +69,42 @@ object NativeAlarmScheduler {
     }
 
     fun schedule(context: Context, alarm: StoredAlarm, triggerAt: Long, resetSession: Boolean = true) {
-        // Cleanup removes old watchdog/snooze ids; occurrence checks reject delivered events.
-        if (resetSession) AlarmSessions.invalidate(context, alarm.id)
-        disarm(context, alarm.id)
+        val previous = AlarmStore.get(context, alarm.id)
         val at = if (triggerAt <= alarm.skipUntilMillis) {
             nextTrigger(alarm.hour, alarm.minute, alarm.weekdays, alarm.skipUntilMillis)
         } else triggerAt
         val scheduled = alarm.copy(nextTriggerAt = if (alarm.enabled) at else 0L)
-        AlarmStore.put(context, scheduled)
-        if (!alarm.enabled) return
         val manager = context.getSystemService(AlarmManager::class.java) ?: error("AlarmManager unavailable")
         val primary = triggerPendingIntent(context, scheduled)
         try {
-            manager.setAlarmClock(AlarmManager.AlarmClockInfo(at, showIntent(context, scheduled)), primary)
+            // Replace the primary delivery before retiring the old occurrence.
+            // A rejected edit must not destroy a working alarm or pending check-in.
+            if (alarm.enabled) {
+                manager.setAlarmClock(AlarmManager.AlarmClockInfo(at, showIntent(context, scheduled)), primary)
+            } else {
+                manager.cancel(primary)
+            }
+            AlarmStore.put(context, scheduled)
         } catch (failure: Exception) {
-            AlarmStore.put(context, scheduled.copy(enabled = false, nextTriggerAt = 0L))
+            runCatching {
+                manager.cancel(primary)
+                if (previous != null) {
+                    if (previous.enabled && previous.nextTriggerAt > System.currentTimeMillis()) {
+                        manager.setAlarmClock(AlarmManager.AlarmClockInfo(previous.nextTriggerAt,
+                            showIntent(context, previous)), triggerPendingIntent(context, previous))
+                    }
+                    AlarmStore.put(context, previous)
+                } else AlarmStore.remove(context, alarm.id)
+            }.onFailure {
+                // If the system rejects rollback too, never claim it is armed.
+                previous?.let { old -> AlarmStore.put(context, old.copy(enabled = false, nextTriggerAt = 0L)) }
+                android.util.Log.e("WakeGuard", "Could not restore previous alarm", it)
+            }
             throw failure
         }
+        if (resetSession) AlarmSessions.invalidate(context, alarm.id)
+        disarmRungs(context, alarm.id)
+        runCatching { manager.cancel(snoozePendingIntent(context, alarm.id)) }
         // Watchdogs exist only for a live session, never for a future alarm.
     }
 
@@ -228,6 +248,7 @@ object NativeAlarmScheduler {
             putExtra(EXTRA_SOUND, alarm?.soundPack)
             putExtra(EXTRA_SNOOZE, alarm?.snoozeMinutes ?: AlarmDefaults.DEFAULT_SNOOZE_MINUTES)
             putExtra(EXTRA_ESCAPES, escapesExtra(alarm))
+            putExtra(EXTRA_OBJECT_TARGET, alarm?.objectTarget ?: "sink")
             putExtra("rung", rung)
             putExtra(AlarmSessions.EXTRA_SESSION, alarm?.id?.let { AlarmSessions.get(context, it)?.token })
         }
@@ -252,6 +273,7 @@ object NativeAlarmScheduler {
                 putExtra(EXTRA_SOUND, alarm.soundPack)
                 putExtra(EXTRA_SNOOZE, alarm.snoozeMinutes)
                 putExtra(EXTRA_ESCAPES, escapesExtra(alarm))
+                putExtra(EXTRA_OBJECT_TARGET, alarm.objectTarget)
                 putExtra(EXTRA_TRIGGER_AT, alarm.nextTriggerAt)
                 putExtra("rung", -1)
             },
@@ -271,19 +293,20 @@ object NativeAlarmScheduler {
     }
 
     fun armSnooze(context: Context, session: AlarmSession, at: Long) {
-        val operation = snoozePendingIntent(context, session.alarm.id)
+        // Use the session being armed, rather than rereading mutable stored extras.
+        val operation = snoozePendingIntent(context, session.alarm.id, session.token)
         context.getSystemService(AlarmManager::class.java).setAlarmClock(
             AlarmManager.AlarmClockInfo(maxOf(System.currentTimeMillis() + 500L, at), showIntent(context, session.alarm)), operation)
     }
 
-    private fun snoozePendingIntent(context: Context, id: String): PendingIntent =
+    private fun snoozePendingIntent(context: Context, id: String, token: String? = null): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             StoredAlarm.notificationIdFor(id) + 7,
             Intent(context, AlarmReceiver::class.java).apply {
                 data = android.net.Uri.parse("wakeguard://alarm/$id/snoozed")
                 putExtra(EXTRA_ALARM_ID, id)
-                putExtra(AlarmSessions.EXTRA_SESSION, AlarmSessions.get(context, id)?.token)
+                putExtra(AlarmSessions.EXTRA_SESSION, token)
                 putExtra("snoozed", true)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,

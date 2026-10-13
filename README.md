@@ -23,15 +23,23 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
   this is not yet a production-ready release.
 - **Android-first.** An iOS target is included, but current development and
   release verification focus on Android.
-- **Free, no ads, no analytics, no accounts.** Everything is stored on device.
+- **Free, no ads, no accounts.** Alarm records stay on device; Google ML Kit's
+  SDK diagnostics are disclosed in the Privacy policy.
 - **Camera** is used only while a wake challenge is on screen. Frames are never
   saved or transmitted.
 
 ## Features
 
-- **Simple / Challenge / Get out of bed presets:** tap to stop, a camera-free
-  memory pattern, or a QR code placed away from bed. Face actions are also
-  available. The one-minute hold always remains an escape.
+- **Simple / Challenge / Get out of bed presets:** optional Tap, Face actions,
+  or Find an object placed away from bed. Object targets are Sink (recommended),
+  and Cup, using exact labels in a bundled offline model. Sink scans tolerate brief
+  detection dropouts without counting missing frames toward completion. A successful
+  three-second practice scan is required before enabling an Object alarm. QR is
+  also selectable. Hold-to-stop and Pattern have been removed on Android.
+- **Animated native challenges:** framing guides, recognition-backed progress,
+  step transitions and a short success screen after sound stops. System animation
+  settings are respected. Face does not override screen brightness or offer a slider;
+  use a well-lit room.
 - **Stay Awake:** opt into a check-in 3, 5 or 10 minutes after dismissal. Confirm
   when a short notification sound prompts you, using “I'm up” during the
   one-minute grace period; an unanswered check-in
@@ -48,10 +56,11 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
   unscheduled weekdays for the current repeating schedule. History is bounded
   and can be deleted from the History tab.
 - **Readiness:** blocking exact-alarm, notification and alarm-volume checks;
-  camera permission required to save or enable Face/QR alarms; full-screen
+  camera permission required to save or enable Face/Object/QR alarms; full-screen
   guidance; sound previews; next-date/time save feedback.
-- **Privacy:** no account, ads or analytics; local processing and explicit
-  Android backup/transfer exclusions. Uninstalling deletes local records.
+- **Privacy:** no accounts or ads; on-device camera processing and explicit
+  Android backup/transfer exclusions. Uninstalling deletes local records. See
+  `docs/wakeguard-privacy.html` for local data and third-party SDK diagnostics.
 
 ## Screenshots
 
@@ -109,7 +118,7 @@ docs/          Architecture and verification scenarios
 
 The Dart side keeps a **mirror** of the alarm set for fast rendering; the
 native store decides what actually rings. They are reconciled on every load
-(`lib/models/reconcile.dart`): the platform wins on `enabled`, alarms the mirror
+(`lib/models/reconcile.dart`): Android wins on configuration and `enabled`, alarms the mirror
 knows but the platform lost are re-scheduled, and alarms only the platform
 knows are imported rather than dropped.
 
@@ -119,14 +128,16 @@ Details are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```sh
 flutter pub get
-flutter run            # debug; signing uses the debug key
-flutter test
-flutter analyze
+flutter build apk --debug
+flutter build apk --release
+flutter build appbundle --release
 ```
 
-Release signing is **not** set up yet: `android/app/build.gradle.kts` uses the
-debug key and has `isMinifyEnabled = false`. Production signing is required;
-release shrinking should be evaluated with the camera models and sound assets.
+Android's application ID, namespace and Kotlin package are `com.bling.wakeguard`.
+The release uses a real upload key configured in gitignored `android/key.properties`
+or signing environment variables. It never falls back to debug signing. See
+[`docs/ANDROID_RELEASE.md`](docs/ANDROID_RELEASE.md). Target/compile SDK is at least
+36. Release shrinking remains off until the camera models have been validated.
 
 ## Release roadmap
 
@@ -141,14 +152,14 @@ Current Android configuration:
   devices are not filtered out.
 - Blocking vs. warning severities: only exact alarms, alarm volume and
   notification permission are globally blocking. Camera permission additionally
-  blocks Face/QR saves and enables; Pattern/Tap need no camera. Full-screen
+   blocks Face/Object/QR saves and enables; optional Tap needs no camera. Full-screen
   intent is advisory.
 
 Before a public release:
 
-- Run static analysis, Flutter/native tests, and the real-device scenarios in
+- Build the signed AAB and complete the real-device scenarios in
   [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
-- Configure production signing and evaluate release shrinking.
+- Back up the upload key and signing credentials and evaluate release shrinking.
 - Capture real screenshots of the alarm editor, challenges, and Stay Awake
   flow for this README and the store listing.
 - Publish a privacy policy and complete the store's data-safety declarations.

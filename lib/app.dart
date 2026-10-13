@@ -16,14 +16,10 @@ class WakeGuardApp extends StatefulWidget {
     super.key,
     required this.engine,
     required this.repository,
-    this.pendingChallenge,
   });
 
   final AlarmEngine engine;
   final AlarmRepository repository;
-
-  /// Non-null when the app was cold-launched straight into a live alarm.
-  final Map<String, Object?>? pendingChallenge;
 
   @override
   State<WakeGuardApp> createState() => _WakeGuardAppState();
@@ -79,10 +75,10 @@ class _WakeGuardAppState extends State<WakeGuardApp> {
   }
 
   static ThemeData _theme(Brightness brightness) => ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xffef5b2a),
-          brightness: brightness,
-        ),
-        useMaterial3: true,
-      );
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: const Color(0xffef5b2a),
+      brightness: brightness,
+    ),
+    useMaterial3: true,
+  );
 }

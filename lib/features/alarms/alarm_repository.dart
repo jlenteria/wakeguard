@@ -16,15 +16,23 @@ class AlarmRepository {
     if (raw == null) return const [];
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) throw const FormatException('Alarm mirror is not a list');
-      final alarms = decoded
-          .map((item) {
-            try { return item is Map ? Alarm.fromJson(Map<String, Object?>.from(item)) : null; }
-            catch (_) { return null; }
-          })
-          .whereType<Alarm>()
-          .toList()
-        ..sort((a, b) => a.minuteOfDay - b.minuteOfDay);
+      if (decoded is! List) {
+        throw const FormatException('Alarm mirror is not a list');
+      }
+      final alarms =
+          decoded
+              .map((item) {
+                try {
+                  return item is Map
+                      ? Alarm.fromJson(Map<String, Object?>.from(item))
+                      : null;
+                } catch (_) {
+                  return null;
+                }
+              })
+              .whereType<Alarm>()
+              .toList()
+            ..sort((a, b) => a.minuteOfDay - b.minuteOfDay);
       return alarms;
     } on FormatException {
       return const [];

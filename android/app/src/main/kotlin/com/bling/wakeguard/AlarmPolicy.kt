@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 /** Pure rules shared by receivers and covered without Android services. */
 object AlarmPolicy {

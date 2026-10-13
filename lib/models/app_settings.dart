@@ -20,12 +20,11 @@ class AppSettings {
     ThemeModeSetting? themeMode,
     int? defaultSnoozeMinutes,
     bool? onboardingDone,
-  }) =>
-      AppSettings(
-        themeMode: themeMode ?? this.themeMode,
-        defaultSnoozeMinutes: defaultSnoozeMinutes ?? this.defaultSnoozeMinutes,
-        onboardingDone: onboardingDone ?? this.onboardingDone,
-      );
+  }) => AppSettings(
+    themeMode: themeMode ?? this.themeMode,
+    defaultSnoozeMinutes: defaultSnoozeMinutes ?? this.defaultSnoozeMinutes,
+    onboardingDone: onboardingDone ?? this.onboardingDone,
+  );
 }
 
 enum ThemeModeSetting {
@@ -34,8 +33,8 @@ enum ThemeModeSetting {
   dark;
 
   String get label => switch (this) {
-        system => 'System',
-        light => 'Light',
-        dark => 'Dark',
-      };
+    system => 'System',
+    light => 'Light',
+    dark => 'Dark',
+  };
 }

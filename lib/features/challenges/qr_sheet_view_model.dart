@@ -113,7 +113,7 @@ class QrSheetViewModel extends ViewModel {
                       pw.Text(value, style: const pw.TextStyle(fontSize: 16)),
                       pw.SizedBox(height: 8),
                       pw.Text(
-                        'If the code will not scan, type the code in instead.',
+                        'Scan in good light. Keep the whole code in view.',
                         style: const pw.TextStyle(fontSize: 11),
                       ),
                     ],

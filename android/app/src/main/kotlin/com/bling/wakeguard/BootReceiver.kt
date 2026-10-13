@@ -1,4 +1,4 @@
-package app.wakeguard
+package com.bling.wakeguard
 
 import android.content.BroadcastReceiver
 import android.content.Context

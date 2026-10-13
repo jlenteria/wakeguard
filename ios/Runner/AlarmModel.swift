@@ -14,8 +14,16 @@ struct StoredAlarm: Codable {
     let stepCount: Int
     /// Generated tone family: pulse | siren | radar | gong. Optional so old alarms decode.
     let soundPack: String?
+    /// Seconds the hold-to-stop escape takes; optional so old alarms decode to the default.
+    let holdSeconds: Int?
 
     var resolvedSoundPack: String { soundPack ?? AlarmSounds.defaultPack }
+
+    /// Lifetime value for an alarm that predates per-alarm holds; also the strictest preset.
+    static let defaultHoldSeconds = 60
+
+    /// Seconds the hold-to-stop escape takes, clamped to the range the UI offers.
+    var effectiveHoldSeconds: Int { min(90, max(15, holdSeconds ?? Self.defaultHoldSeconds)) }
 
     /// Notification identifier prefix; the escalation ladder appends an index.
     var ladderIdPrefix: String { "wakeguard.\(id).rung" }

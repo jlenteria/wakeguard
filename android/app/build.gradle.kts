@@ -1,12 +1,31 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val uploadProperties = Properties().apply {
+    val path = rootProject.file("key.properties")
+    if (path.exists()) path.inputStream().use { load(it) }
+}
+fun uploadValue(key: String, environment: String): String? =
+    System.getenv(environment)?.takeIf { it.isNotBlank() }
+        ?: uploadProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+val uploadStore = uploadValue("storeFile", "WAKEGUARD_KEYSTORE")
+val uploadAlias = uploadValue("keyAlias", "WAKEGUARD_KEY_ALIAS")
+val uploadStorePassword = uploadValue("storePassword", "WAKEGUARD_STORE_PASSWORD")
+val uploadKeyPassword = uploadValue("keyPassword", "WAKEGUARD_KEY_PASSWORD")
+val hasUploadKey = listOf(uploadStore, uploadAlias, uploadStorePassword, uploadKeyPassword).all { it != null }
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+if (releaseRequested && !hasUploadKey) {
+    throw GradleException("Release signing is not configured. Add android/key.properties using key.properties.example or set WAKEGUARD signing environment variables. Debug builds remain available; release never uses the debug key.")
+}
+
 android {
-    namespace = "app.wakeguard"
-    compileSdk = flutter.compileSdkVersion
+    namespace = "com.bling.wakeguard"
+    compileSdk = maxOf(36, flutter.compileSdkVersion)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -15,20 +34,30 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.wakeguard"
+        applicationId = "com.bling.wakeguard"
         // 24 is the floor for the CameraX/ML Kit versions below and for the
         // modern AlarmManager exact-alert path.
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         resourceConfigurations += listOf("en")
     }
 
+    signingConfigs {
+        if (hasUploadKey) {
+            create("upload") {
+                storeFile = rootProject.file(uploadStore!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: replace with a real upload key before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasUploadKey) signingConfig = signingConfigs.getByName("upload")
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -37,6 +66,8 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    sourceSets.getByName("main").assets.srcDir("../../resources")
 
     packaging {
         resources {
@@ -65,6 +96,8 @@ dependencies {
 
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // Bundled model: exact Sink/Cup labels work offline on first launch.
+    implementation("com.google.mlkit:image-labeling:17.0.9")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")

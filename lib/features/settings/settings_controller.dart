@@ -17,25 +17,26 @@ class SettingsRepository {
     );
     return AppSettings(
       themeMode: theme,
-      defaultSnoozeMinutes: (prefs.getInt(_snoozeKey) ??
-              Alarm.defaultSnoozeMinutes)
-          .clamp(0, 60),
+      defaultSnoozeMinutes:
+          (prefs.getInt(_snoozeKey) ?? Alarm.defaultSnoozeMinutes).clamp(0, 60),
       onboardingDone: prefs.getBool(_onboardingKey) ?? false,
     );
   }
 
   Future<void> save(AppSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_themeKey, settings.themeMode.name);
-    await prefs.setInt(_snoozeKey, settings.defaultSnoozeMinutes);
-    await prefs.setBool(_onboardingKey, settings.onboardingDone);
+    if (!await prefs.setString(_themeKey, settings.themeMode.name) ||
+        !await prefs.setInt(_snoozeKey, settings.defaultSnoozeMinutes) ||
+        !await prefs.setBool(_onboardingKey, settings.onboardingDone)) {
+      throw StateError('Could not persist settings');
+    }
   }
 }
 
 /// Observable settings, so a theme change repaints immediately.
 class SettingsController extends ChangeNotifier {
   SettingsController({SettingsRepository? repository})
-      : _repository = repository ?? SettingsRepository();
+    : _repository = repository ?? SettingsRepository();
 
   final SettingsRepository _repository;
 
@@ -61,14 +62,16 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> update(AppSettings Function(AppSettings) mutate) async {
     if (_disposed) return;
-    _settings = mutate(_settings);
-    final snapshot = _settings;
-    notifyListeners();
-    _writes = _writes.then((_) async {
-      try { await _repository.save(snapshot); }
-      catch (error) { debugPrint('WakeGuard settings save failed: $error'); }
+    final operation = _writes.then((_) async {
+      final snapshot = mutate(_settings);
+      await _repository.save(snapshot);
+      if (_disposed) return;
+      _settings = snapshot;
+      notifyListeners();
     });
-    await _writes;
+    // Report failure to the caller without poisoning later settings writes.
+    _writes = operation.then<void>((_) {}, onError: (Object _) {});
+    await operation;
   }
 
   @override
