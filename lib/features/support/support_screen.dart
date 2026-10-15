@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 class SupportDetails {
   const SupportDetails._();
 
-  static const qrAsset = 'docs/banks/palawanpay.jpg';
+  static const qrAsset = 'docs/banks/bpi.jpg';
 }
 
 /// A no-drama way to chip in: scan, no accounts or tax forms.
