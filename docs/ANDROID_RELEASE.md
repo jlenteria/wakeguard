@@ -46,6 +46,10 @@ or placed on the command line.
 
 Bundle: `build/app/outputs/bundle/release/app-release.aab`.
 APK: `build/app/outputs/flutter-apk/app-release.apk`.
+`make build-apk-release` and `make release` also create a versioned copy,
+`build/app/outputs/flutter-apk/WakeGuard-<version>+<build>.apk`, using the version
+in `pubspec.yaml` (for example, `WakeGuard-1.0.1+2.apk`). `make install-release`
+installs that versioned APK. Flutter's original output is retained for its build tooling.
 Namespace, application ID and Kotlin package: `com.bling.wakeguard`.
 The previous `app.wakeguard` application ID is a separate installed app; Android
 does not transfer its private alarm records to this application ID.

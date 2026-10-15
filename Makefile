@@ -16,7 +16,9 @@ PYTHON ?= python3
 ADB ?= adb
 JAVA ?= java
 
-APK := build/app/outputs/flutter-apk/app-release.apk
+APP_VERSION := $(shell $(PYTHON) -c 'from pathlib import Path; print(next(line.split(":", 1)[1].strip() for line in Path("pubspec.yaml").read_text().splitlines() if line.startswith("version:")))')
+APK-FLUTTER := build/app/outputs/flutter-apk/app-release.apk
+APK := build/app/outputs/flutter-apk/WakeGuard-$(APP_VERSION).apk
 APK-DEBUG := build/app/outputs/flutter-apk/app-debug.apk
 AAB := build/app/outputs/bundle/release/app-release.aab
 GRADLEW := ./android/gradlew -p android
@@ -152,6 +154,8 @@ build-apk:
 
 build-apk-release:
 	$(FLUTTER) build apk --release
+	cp "$(APK-FLUTTER)" "$(APK)"
+	@echo "Release APK: $(APK)"
 
 build-aab:
 	$(FLUTTER) build appbundle --release
