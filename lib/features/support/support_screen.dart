@@ -22,8 +22,10 @@ class SupportScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           Text(
-            'WakeGuard is free, with no ads and no accounts. If it helps you '
-            'get up, you can fuel its development:',
+            'WakeGuard is free, with no ads and no accounts. Every feature is '
+            'available to everyone. If you would like to, you can send an '
+            'optional, voluntary tip directly to the developer. It unlocks '
+            'nothing and gives no rewards.',
             style: text.bodyMedium,
           ),
           const SizedBox(height: 20),
@@ -41,7 +43,8 @@ class SupportScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Scan with any QR Ph app.',
+                    'Scan with any QR Ph app. This is a direct person-to-person '
+                    'transfer to the developer, not a purchase.',
                     textAlign: TextAlign.center,
                     style: text.bodySmall,
                   ),
@@ -52,7 +55,7 @@ class SupportScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Center(
             child: Text(
-              'Every amount helps. Thank you!',
+              'Never required. Thank you for using WakeGuard!',
               style: text.bodySmall,
             ),
           ),

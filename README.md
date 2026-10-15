@@ -133,6 +133,14 @@ flutter build apk --release
 flutter build appbundle --release
 ```
 
+Or via the Makefile (`make help` lists everything):
+
+```sh
+make release-key     # once: create the upload keystore
+make release         # checks + tests + signed AAB and APK
+make release-verify  # verify the AAB signature
+```
+
 Android's application ID, namespace and Kotlin package are `com.bling.wakeguard`.
 The release uses a real upload key configured in gitignored `android/key.properties`
 or signing environment variables. It never falls back to debug signing. See

@@ -21,8 +21,9 @@ GRADLEW := ./android/gradlew -p android
 
 .PHONY: help setup get upgrade clean doctor devices run run-release analyze \
 	format format-check test test-native verify removable check audit \
-	icons alarms assets build-apk build-aab build-ios install uninstall \
-	logcat logcat-alarm forward
+	icons alarms assets build-apk build-apk-release build-aab build-ios \
+	build-ios-release release release-check release-key release-verify \
+	install install-release uninstall logcat logcat-alarm forward
 
 help:
 	@echo "WakeGuard targets"
@@ -59,10 +60,18 @@ help:
 	@echo "    make build-apk        Build a debug APK"
 	@echo "    make build-apk-release Build a signed release APK"
 	@echo "    make build-aab        Build a release App Bundle"
-	@echo "    make build-ios        Build a release iOS app (no codesign)"
+	@echo "    make build-ios        Build a debug iOS app (no codesign)"
+	@echo "    make build-ios-release Build a release iOS app (no codesign)"
+	@echo ""
+	@echo "  Release (Android, Play Store)"
+	@echo "    make release-key      Create the upload keystore (once; refuses to overwrite)"
+	@echo "    make release-check    Fail early if signing is not configured"
+	@echo "    make release          check + test + signed AAB and APK"
+	@echo "    make release-verify   Verify the signature of the built AAB"
 	@echo ""
 	@echo "  Device"
-	@echo "    make install          Install the release APK over the current build"
+	@echo "    make install          Install the debug APK"
+	@echo "    make install-release  Install the release APK"
 	@echo "    make uninstall        Remove the app from the device"
 	@echo "    make logcat           Tail WakeGuard/alarm system logs"
 	@echo "    make logcat-alarm     Tail alarm-manager logs only"
@@ -150,6 +159,31 @@ build-ios:
 
 build-ios-release:
 	$(FLUTTER) build ios --release --no-codesign
+
+# --- Release (Android) -------------------------------------------------------
+# Signing comes from android/key.properties or the WAKEGUARD_* environment
+# variables (see docs/ANDROID_RELEASE.md). Release never uses the debug key.
+
+release-key:
+	$(PYTHON) tool/create_android_upload_key.py
+
+release-check:
+	@if [ -z "$$WAKEGUARD_KEYSTORE" ] && [ ! -f android/key.properties ]; then \
+		echo "Release signing is not configured."; \
+		echo "Run 'make release-key' or copy android/key.properties.example to android/key.properties."; \
+		exit 1; \
+	fi
+	@echo "Release signing configuration found."
+
+release: release-check check test build-aab build-apk-release
+	@echo ""
+	@echo "Bundle (upload to Play): $(AAB)"
+	@echo "APK (sideload testing):  $(APK)"
+	@echo "Next: make release-verify, then complete docs/VERIFICATION.md on real devices."
+
+release-verify:
+	@test -f $(AAB) || { echo "Missing $(AAB); run 'make build-aab' first."; exit 1; }
+	jarsigner -verify -verbose:summary $(AAB)
 
 # --- Device ------------------------------------------------------------------
 

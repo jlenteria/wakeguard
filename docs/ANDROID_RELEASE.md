@@ -30,6 +30,10 @@ flutter build apk --release
 flutter build appbundle --release
 ```
 
+Equivalent Makefile shortcuts: `make release-key` (once), `make release`
+(analyze, format check, source checks, tests, then signed AAB and APK) and
+`make release-verify` (checks the AAB signature with `jarsigner`).
+
 Bundle: `build/app/outputs/bundle/release/app-release.aab`.
 APK: `build/app/outputs/flutter-apk/app-release.apk`.
 Namespace, application ID and Kotlin package: `com.bling.wakeguard`.
@@ -64,10 +68,43 @@ This repository prepares the HTML; it does not deploy the separate Netlify site.
   is offline: SDK diagnostics include device/app information, installation IDs,
   performance/configuration and feature/error events. Camera frames and alarm
   contents are not uploaded by WakeGuard.
-- Support QR contributions grant no digital features. Keep the arrangement within
-  the direct-contribution exception: 100% to the creator, no digital rewards.
+- Support QR (Settings -> Support): voluntary person-to-person tip, no digital
+  features, rewards or unlocks, and nothing is gated behind it. Play's Payments
+  policy exempts "peer-to-peer payments" and "tax exempt donations" from Play
+  Billing, but an individual's tip is not clearly either, and reviewers can reject
+  external payment prompts. This is a real review risk. If the app is rejected for
+  it, remove the Support screen entry point from the Play build and resubmit; do not
+  appeal by adding any reward. Do not mention the QR or tipping in the store listing.
 - For a qualifying new personal developer account, complete the required closed
   test with 12 continuously opted-in testers for 14 days, then apply for production access.
+
+### Declaration cheat sheet
+
+- **Full-screen intent (`USE_FULL_SCREEN_INTENT`):** core function is an alarm clock;
+  the ring/challenge screen must appear over the lock screen at the alarm time.
+  Demo video: schedule an alarm, lock the phone, show the challenge appearing on
+  the lock screen, complete it.
+- **Foreground service `mediaPlayback`:** `RingingService` loops the alarm tone while
+  the alarm rings and the challenge is pending. Demo video: the ringing alarm with
+  its persistent notification, then dismissal stopping the service.
+- **Exact alarms:** `USE_EXACT_ALARM` is used (alarm clock app); no Play declaration
+  form is expected, but the core functionality must be alarm clock.
+- **Camera:** runtime permission, only for Face/Object/QR challenges; optional
+  (`android.hardware.camera.front` is `required="false"`).
+- **Data Safety:** collection by ML Kit SDKs (device/app info, installation IDs,
+  diagnostics). Not collected by WakeGuard: accounts, alarm contents, camera frames.
+  Privacy policy URL: https://jlenteria.netlify.app/wakeguard-privacy.html
+
+### Per-upload checklist
+
+1. Bump `version:` in `pubspec.yaml` (`1.0.0+1` is the first upload; every later
+   upload needs a higher build number after the `+`).
+2. `make release`, then `make release-verify`.
+3. Complete `docs/VERIFICATION.md` on real devices (including an API 24-27 device
+   and a lower-end device) and record the results.
+4. Back up `android/app/upload-keystore.jks` and `android/key.properties` offline.
+5. Upload `build/app/outputs/bundle/release/app-release.aab` to an internal or
+   closed test track first.
 
 Production readiness requires the signed artifact and completed device results;
 source changes, a successful debug build, or the existence of this checklist are
