@@ -112,15 +112,23 @@ object StayAwake {
         val manager = context.getSystemService(NotificationManager::class.java)
         val sound = reminderSound(context)
         createChannel(context)
+        val openCheckIn = PendingIntent.getActivity(context, 0,
+            Intent(context, StayAwakeActivity::class.java).apply {
+                data = Uri.parse("wakeguard://checkin/${session.token}/view")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(NativeAlarmScheduler.EXTRA_ALARM_ID, session.alarm.id)
+                putExtra(AlarmSessions.EXTRA_SESSION, session.token)
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(session.alarm.notificationId xor 0x40000000,
             NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_wakeguard_alarm).setContentTitle("Still up?")
                 .setContentText("${session.alarm.label}: confirm within $remainingSeconds seconds. Otherwise one follow-up alarm will ring.")
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(false).setOngoing(true)
-                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setSound(sound).setVibrate(NOTIFICATION_VIBRATION).setOnlyAlertOnce(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setContentIntent(operation(context, session, "confirm"))
+                .setContentIntent(openCheckIn)
+                .setFullScreenIntent(openCheckIn, true)
                 .addAction(0, "I'm up", operation(context, session, "confirm")).build())
         AlarmEvents.record(context, session, "checkin_prompted")
     }
@@ -129,6 +137,19 @@ object StayAwake {
         val manager = context.getSystemService(AlarmManager::class.java)
         for (stage in listOf("prompt", "deadline")) manager.cancel(operation(context, session, stage))
         context.getSystemService(NotificationManager::class.java).cancel(session.alarm.notificationId xor 0x40000000)
+    }
+
+    /** Both the notification and foreground card confirm the same persisted occurrence. */
+    fun confirm(context: Context, id: String, token: String?): Boolean {
+        val session = AlarmSessions.get(context, id) ?: return false
+        if (session.phase != "checkin" || token == null || session.token != token) return false
+        val now = System.currentTimeMillis()
+        if (now < session.checkAt || now >= session.checkAt + GRACE_MS) return false
+        // Persist first: a failed write must leave the deadline armed for recovery.
+        AlarmSessions.save(context, session.copy(phase = "done"))
+        cancel(context, session)
+        AlarmEvents.record(context, session, "confirmed", "checkin")
+        return true
     }
 }
 
@@ -150,10 +171,7 @@ class CheckInReceiver : BroadcastReceiver() {
                 }
             }
             "confirm" -> {
-                if (now < session.checkAt || now > session.checkAt + StayAwake.GRACE_MS) return
-                StayAwake.cancel(context, session)
-                AlarmSessions.save(context, session.copy(phase = "done"))
-                AlarmEvents.record(context, session, "confirmed", "checkin")
+                StayAwake.confirm(context, id, session.token)
             }
             "deadline" -> {
                 if (now < session.checkAt + StayAwake.GRACE_MS) {

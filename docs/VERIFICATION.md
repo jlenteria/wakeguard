@@ -30,6 +30,8 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
    revoke them in Settings, retry and resume the app. Blocked notifications must
    appear in Health. Skipping onboarding must not silently arm an unusable alarm.
    A persistence failure must report failure rather than claim completion.
+   On Android 13+, deny the notification dialog repeatedly, then use Health's fix:
+   it must open notification settings rather than retry a suppressed dialog.
 2. **Engine/save failure:** an unavailable native channel must show an error and
    allow Retry. It must never show a successful enabled save. Failed edits must
    retain the draft and show the configuration actually stored natively.
@@ -48,7 +50,12 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
    is already ringing must do the same. Recovery refreshes must not restart a
    challenge already on screen. Repeat while a previous success screen is visible.
    With the phone locked, verify full-screen opening when permission is granted;
-   with permission denied or another app visible, Android may show a notification.
+    with permission denied or another app visible, Android may show a notification.
+    On Samsung, distinguish the locked-screen case from the unlocked launcher or
+    another app. Check Full screen alerts and the Ringing alarms notification
+    category's Show as pop-up setting; Brief/Edge lighting can replace heads-up
+    presentation. Record the device state and system interruption decision when
+    auto-opening fails, rather than assuming manifest permission means a launch.
 6. **Object practice:** separately test Sink and Cup; Plant must not be offered.
    Sink starts at exact-label confidence >= 0.70, then maintains at >= 0.60.
    Cup requires >= 0.80. Completion needs at least eight matches and three seconds
@@ -89,7 +96,21 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
     I'm up within one minute. Confirming prevents follow-up.
     Unanswered checks create exactly one follow-up, with no snooze or further
     check-in. Practice creates no check-in. Block/mute the check-in channel and
-    verify Health plus explicit blocked/failed history rather than silent success.
+     verify Health plus explicit blocked/failed history rather than silent success.
+     Leave WakeGuard open on each main tab: a Still up? card must appear when the
+     response window starts, show the remaining seconds and offer I'm up. Confirm
+     from the card and from the notification separately; both must cancel the
+     deadline and record exactly one confirmation. Reopening during the window
+     must show only the remaining time, not start a new minute. Expired or edited
+     sessions cannot be confirmed; multiple check-ins must be handled individually.
+      With the phone locked, full-screen access enabled and the check-in channel
+      allowed, verify the native Still up? page wakes the display and appears over
+      the lock screen. With access denied or the phone unlocked, Android may show
+      a notification instead. Tapping its body opens the same native page. Confirm
+      from the page, card and notification action independently. Opening, leaving
+      or rotating the page must not confirm or extend the window. Confirmation on
+      another surface, an alarm edit or expiry must close the stale page. At expiry
+      the native deadline still starts exactly one follow-up alarm.
 14. **Check-in recovery:** reboot or change time before/during/after the response
     window. A late restored prompt reports remaining seconds; an expired prompt
     is not shown as newly answerable. Editing/deleting/disabling an alarm cancels
@@ -97,7 +118,10 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
 15. **Sessions:** nearby alarms queue without stopping each other. Stale tokens
     cannot dismiss/snooze a later occurrence. Playback, recovery, shutdown,
     timeout and queue draining must stay bounded; a forgotten alarm times out at
-    15 minutes and records Missed rather than a successful wake-up.
+     15 minutes and records Missed rather than a successful wake-up.
+     Simulate MediaPlayer setup/preparation/start failures: immediate recovery is
+     limited to three retries (1, 2 and 4 seconds), preparation is bounded to five
+     seconds, and dismissing/snoozing must cancel all pending audio retries.
 16. **History/settings/privacy:** settings persist through restart; transient
     history reads retain the previous list; clearing history does not clear
     alarms/check-ins. Stats are labelled as saved-history totals. Settings shows

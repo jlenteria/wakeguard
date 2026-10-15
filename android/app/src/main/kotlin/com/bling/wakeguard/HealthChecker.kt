@@ -61,8 +61,8 @@ object HealthChecker {
                 id = "full_screen",
                 label = "Full-screen alarm",
                 passing = canUseFullScreenIntent(context),
-                ok = "WakeGuard can show the challenge when your phone is locked.",
-                bad = "You may need to tap the alarm notification to open the challenge. Allow full-screen alarms in your phone’s settings.",
+                ok = "Full-screen permission is enabled. Test an alarm with your phone locked. While unlocked outside WakeGuard, Android may show a notification instead of opening the challenge.",
+                bad = "Allow full-screen alerts for WakeGuard in your phone’s settings. Without this access, you may need to tap the ringing notification to open the challenge.",
                 action = "full_screen",
                 // The alarm rings either way; only presentation changes, so do not block saving.
                 severity = HealthSeverityValue.warning,
@@ -173,6 +173,14 @@ object HealthChecker {
     fun requestNotificationPermission(activity: Activity) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (hasNotificationPermission(activity)) return
+        val preferences = activity.getSharedPreferences("wakeguard.permissions", Context.MODE_PRIVATE)
+        if (preferences.getBoolean("notificationsRequested", false) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, android.Manifest.permission.POST_NOTIFICATIONS)) {
+            val failure = openFix(activity, "notification_permission")
+            check(failure == null) { failure ?: "Could not open notification settings" }
+            return
+        }
+        preferences.edit().putBoolean("notificationsRequested", true).apply()
         ActivityCompat.requestPermissions(
             activity,
             arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
@@ -204,14 +212,10 @@ object HealthChecker {
                 data = Uri.parse("package:${context.packageName}")
             }
 
-            // Android 13+ can grant inline via the system dialog; older releases open app settings.
+            // Health is the recovery path, including permanently denied permissions.
+            // Onboarding uses requestNotificationPermission for the initial dialog.
             "notification_permission" ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    context is Activity
-                ) {
-                    requestNotificationPermission(context)
-                    return null
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                         putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     }

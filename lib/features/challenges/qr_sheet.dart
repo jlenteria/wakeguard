@@ -3,7 +3,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'qr_sheet_view_model.dart';
 import '../../shared/toast.dart';
-import '../../shared/view_model.dart';
+import 'package:provider/provider.dart';
 
 /// Renders [value] as a shareable QR code; plain text is shown too as a fallback.
 class QrSheet extends StatelessWidget {
@@ -13,9 +13,11 @@ class QrSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ViewModelProvider<QrSheetViewModel>(
+    return ChangeNotifierProvider<QrSheetViewModel>(
       create: (_) => QrSheetViewModel(value),
-      builder: (context, viewModel) => QrSheetScreen(viewModel: viewModel),
+      child: Consumer<QrSheetViewModel>(
+        builder: (context, viewModel, _) => QrSheetScreen(viewModel: viewModel),
+      ),
     );
   }
 }

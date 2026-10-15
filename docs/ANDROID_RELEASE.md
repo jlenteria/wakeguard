@@ -31,8 +31,18 @@ flutter build appbundle --release
 ```
 
 Equivalent Makefile shortcuts: `make release-key` (once), `make release`
-(analyze, format check, source checks, tests, then signed AAB and APK) and
-`make release-verify` (checks the AAB signature with `jarsigner`).
+(signing preflight, analysis/source checks, tests, then signed AAB, APK and bundle
+verification, in that order even with `make -j release`).
+`make release-verify` can also verify an existing AAB independently.
+
+Signing preflight and verification require JDK 17+ (`JAVA=/path/to/java` may be
+overridden). They read the same signing properties/environment variables as
+Gradle. Preflight opens the keystore and private key and checks certificate
+validity. Verification reads every payload entry to check its digest and requires
+its signer to match the configured upload certificate. Unsigned, partially signed,
+modified or differently signed bundles fail; a self-signed upload certificate is
+accepted without needing a public certificate authority. Passwords are not printed
+or placed on the command line.
 
 Bundle: `build/app/outputs/bundle/release/app-release.aab`.
 APK: `build/app/outputs/flutter-apk/app-release.apk`.
@@ -83,7 +93,8 @@ This repository prepares the HTML; it does not deploy the separate Netlify site.
 - **Full-screen intent (`USE_FULL_SCREEN_INTENT`):** core function is an alarm clock;
   the ring/challenge screen must appear over the lock screen at the alarm time.
   Demo video: schedule an alarm, lock the phone, show the challenge appearing on
-  the lock screen, complete it.
+  the lock screen, complete it. With Stay Awake enabled, also demonstrate the
+  related native Still up? response page on the lock screen and its I'm up action.
 - **Foreground service `mediaPlayback`:** `RingingService` loops the alarm tone while
   the alarm rings and the challenge is pending. Demo video: the ringing alarm with
   its persistent notification, then dismissal stopping the service.

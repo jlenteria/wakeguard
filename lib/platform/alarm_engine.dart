@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/alarm.dart';
+import '../models/check_in.dart';
 import '../models/health.dart';
 
 /// Platform-agnostic contract implemented once per platform.
@@ -75,7 +76,13 @@ class EngineException implements Exception {
   String toString() => 'EngineException($code, $message)';
 }
 
-class MethodChannelEngine implements AlarmEngine {
+/// Optional native check-in presentation; other platforms need not implement it.
+abstract interface class CheckInEngine {
+  Future<List<PendingCheckIn>> pendingCheckIns();
+  Future<bool> confirmCheckIn(PendingCheckIn checkIn);
+}
+
+class MethodChannelEngine implements AlarmEngine, CheckInEngine {
   MethodChannelEngine({MethodChannel? channel})
     : _channel =
           channel ??
@@ -88,6 +95,26 @@ class MethodChannelEngine implements AlarmEngine {
   static const channelName = 'com.bling.wakeguard/alarm';
 
   final MethodChannel _channel;
+
+  @override
+  Future<List<PendingCheckIn>> pendingCheckIns() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return const [];
+    final raw = await _invoke<List<Object?>>('pendingCheckIns') ?? const [];
+    return raw
+        .cast<Map<Object?, Object?>>()
+        .map(PendingCheckIn.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<bool> confirmCheckIn(PendingCheckIn checkIn) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    return await _invoke<bool>('confirmCheckIn', {
+          'id': checkIn.alarmId,
+          'sessionId': checkIn.sessionId,
+        }) ??
+        false;
+  }
 
   @override
   Future<void> practice(Alarm alarm) =>

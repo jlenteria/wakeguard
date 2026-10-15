@@ -75,6 +75,19 @@
             android:taskAffinity="com.bling.wakeguard"
             android:theme="@style/AlarmRingTheme" />
 
+        <!-- Native response window, presented by the full-screen notification
+             when Android allows it. It never confirms merely by opening. -->
+        <activity
+            android:name=".StayAwakeActivity"
+            android:exported="false"
+            android:directBootAware="true"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.bling.wakeguard.checkin"
+            android:theme="@style/AlarmRingTheme" />
+
         <!-- mediaPlayback rather than specialUse: the service's only job is
              looping an alarm tone, which is exactly what this type describes,
              and specialUse would trigger an extra Play review question. -->

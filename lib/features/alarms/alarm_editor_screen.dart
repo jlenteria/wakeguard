@@ -5,7 +5,7 @@ import '../../platform/alarm_engine.dart';
 import 'alarm_editor_screen_view_model.dart';
 import '../challenges/qr_sheet.dart';
 import '../../shared/toast.dart';
-import '../../shared/view_model.dart';
+import 'package:provider/provider.dart';
 
 /// Public entry for creating or editing an alarm. Stateless: it only wires the
 /// view model lifecycle to [AlarmEditorScreen].
@@ -31,7 +31,7 @@ class AlarmEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ViewModelProvider<AlarmEditorScreenViewModel>(
+    return ChangeNotifierProvider<AlarmEditorScreenViewModel>(
       create: (_) => AlarmEditorScreenViewModel(
         engine: engine,
         existing: existing,
@@ -40,7 +40,22 @@ class AlarmEditor extends StatelessWidget {
         canPractice: canPractice,
         sharedQrValue: sharedQrValue,
       ),
-      builder: (context, viewModel) => AlarmEditorScreen(viewModel: viewModel),
+      // The page messenger paints below the modal route. Host editor toasts
+      // inside the sheet so validation and preview failures stay visible.
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.85,
+        child: ScaffoldMessenger(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            // AlarmEditorScreen already accounts for keyboard and safe insets.
+            resizeToAvoidBottomInset: false,
+            body: Consumer<AlarmEditorScreenViewModel>(
+              builder: (context, viewModel, _) =>
+                  AlarmEditorScreen(viewModel: viewModel),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -431,7 +446,20 @@ class AlarmEditorScreen extends StatelessWidget {
 
   Future<void> _save(BuildContext context) async {
     final alarm = await viewModel.save();
-    if (alarm == null || !context.mounted) return;
+    if (!context.mounted) return;
+    if (alarm == null) {
+      final error = viewModel.validationError;
+      if (error != null) {
+        viewModel.clearValidation();
+        showAppToast(
+          context,
+          kind: ToastKind.error,
+          message: 'Alarm not saved',
+          detail: error,
+        );
+      }
+      return;
+    }
     Navigator.pop(context, alarm);
   }
 

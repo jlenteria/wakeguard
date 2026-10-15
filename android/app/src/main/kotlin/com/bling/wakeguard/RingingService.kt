@@ -59,6 +59,8 @@ class RingingService : Service() {
 
         /** Level the alarm is raised to after being muted for [MUTE_GRACE_MS] (20%). */
         private const val MUTE_RECOVERY_FRACTION = 0.2f
+        private const val PREPARE_TIMEOUT_MS = 5_000L
+        private val PLAYBACK_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L)
 
         fun start(context: Context, alarm: StoredAlarm, elapsedMs: Long) {
             val intent = Intent(context, RingingService::class.java).apply {
@@ -209,6 +211,11 @@ class RingingService : Service() {
     /** The pack currently loaded in [player], so a watchdog restart is a no-op. */
     private var playingPack: String? = null
     private var preparing = false
+    // Kept separate: escalation refreshes must not cancel playback recovery.
+    private val playbackHandler = Handler(Looper.getMainLooper())
+    private var playbackRetries = 0
+    private var playbackRetryPending = false
+    private var destroyed = false
 
     /** When the alarm stream was first seen at 0, or 0 while it is audible. */
     private var silentSinceMs = 0L
@@ -276,6 +283,13 @@ class RingingService : Service() {
 
         val alarm = session.alarm
         val newSession = RingingState.sessionId != session.token
+        if (newSession) {
+            playbackHandler.removeCallbacksAndMessages(null)
+            playbackRetryPending = false
+            playbackRetries = 0
+            playingPack = null
+            releasePlayer()
+        }
         RingingState.activeAlarm = alarm
         RingingState.sessionId = session.token
 
@@ -322,13 +336,15 @@ class RingingService : Service() {
      * Loops the chosen tone; re-entering with the pack already playing is a no-op.
      */
     private fun startPlayback() {
+        if (!canPlay() || playbackRetryPending) return
         if (playingPack == soundPack && player != null && (preparing || runCatching { player?.isPlaying == true }.getOrDefault(false))) return
         releasePlayer()
         playingPack = soundPack
-        val resId = AlarmSounds.resourceFor(this, soundPack)
-        val candidate = MediaPlayer()
-        preparing = true
-        player = runCatching {
+        runCatching {
+            val resId = AlarmSounds.resourceFor(this, soundPack)
+            val candidate = MediaPlayer()
+            player = candidate
+            preparing = true
             candidate.apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -343,27 +359,53 @@ class RingingService : Service() {
                 isLooping = true
                 setOnPreparedListener { ready ->
                     if (player !== ready) return@setOnPreparedListener
+                    playbackHandler.removeCallbacksAndMessages(null)
                     preparing = false
-                    val live = alarmId?.let { AlarmSessions.get(this@RingingService, it) }
-                    if (live?.token == sessionId && live?.phase == "ringing") {
-                        ready.setVolume(1f, 1f)
-                        ready.start()
+                    if (canPlay()) {
+                        runCatching {
+                            ready.setVolume(1f, 1f)
+                            ready.start()
+                        }.onFailure { playbackFailed(it) }
                     } else releasePlayer()
                 }
                 setOnErrorListener { failed, what, extra ->
                     android.util.Log.e("WakeGuard", "Alarm playback error $what/$extra")
-                    if (player === failed) { releasePlayer(); playingPack = null }
+                    if (player === failed) playbackFailed()
                     true
                 }
                 prepareAsync()
             }
+            playbackHandler.postDelayed({
+                if (player === candidate && preparing) {
+                    playbackFailed(IllegalStateException("Alarm audio preparation timed out"))
+                }
+            }, PREPARE_TIMEOUT_MS)
         }.onFailure {
-            // Never let audio setup crash the service; a silent alarm with a prompt is recoverable.
-            android.util.Log.e("WakeGuard", "Alarm audio failed to start", it)
-            runCatching { candidate.release() }
-            preparing = false
-            null
-        }.getOrNull()
+            playbackFailed(it)
+        }
+    }
+
+    private fun canPlay(): Boolean {
+        if (destroyed) return false
+        val live = alarmId?.let { AlarmSessions.get(this, it) } ?: return false
+        return live.token == sessionId && live.phase == "ringing" &&
+            live.elapsed(this) < AlarmDefaults.MAX_RINGING_MS
+    }
+
+    private fun playbackFailed(error: Throwable? = null) {
+        android.util.Log.e("WakeGuard", "Alarm audio failed; attempting bounded recovery", error)
+        playbackHandler.removeCallbacksAndMessages(null)
+        releasePlayer()
+        playingPack = null
+        playbackRetryPending = false
+        if (!canPlay() || playbackRetries >= PLAYBACK_RETRY_DELAYS_MS.size) return
+        val delay = PLAYBACK_RETRY_DELAYS_MS[playbackRetries++]
+        playbackRetryPending = true
+        val expectedToken = sessionId
+        playbackHandler.postDelayed({
+            playbackRetryPending = false
+            if (sessionId == expectedToken && canPlay()) startPlayback()
+        }, delay)
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -488,6 +530,9 @@ class RingingService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        playbackHandler.removeCallbacksAndMessages(null)
+        playbackRetryPending = false
         handler.removeCallbacksAndMessages(null)
         volumeHandler.removeCallbacks(volumeGuard)
         restoreStreamVolume()

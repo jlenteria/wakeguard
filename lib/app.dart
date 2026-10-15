@@ -9,7 +9,7 @@ import 'models/app_settings.dart';
 import 'platform/alarm_engine.dart';
 import 'features/shell/shell_screen.dart';
 import 'features/shell/shell_screen_view_model.dart';
-import 'shared/view_model.dart';
+import 'package:provider/provider.dart';
 
 class WakeGuardApp extends StatefulWidget {
   const WakeGuardApp({
@@ -62,13 +62,15 @@ class _WakeGuardAppState extends State<WakeGuardApp> {
           ThemeModeSetting.light => ThemeMode.light,
           ThemeModeSetting.dark => ThemeMode.dark,
         },
-        home: ViewModelProvider<ShellScreenViewModel>(
+        home: ChangeNotifierProvider<ShellScreenViewModel>(
           create: (_) => ShellScreenViewModel(
             engine: widget.engine,
             controller: _alarms,
             settings: _settings,
           ),
-          builder: (_, viewModel) => ShellScreen(viewModel: viewModel),
+          child: Consumer<ShellScreenViewModel>(
+            builder: (_, viewModel, _) => ShellScreen(viewModel: viewModel),
+          ),
         ),
       ),
     );

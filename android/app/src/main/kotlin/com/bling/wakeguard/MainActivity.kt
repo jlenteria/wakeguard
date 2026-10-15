@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 // Preferences and system-service reads must not block Flutter's
                 // platform thread during startup or a sheet transition.
-                if (call.method in setOf("alarms", "health", "history", "capabilities", "objectTargetVerified")) {
+                if (call.method in setOf("alarms", "health", "history", "capabilities", "objectTargetVerified", "pendingCheckIns")) {
                     runCatching { readQueue.execute {
                         val outcome = runCatching { handle(call) }
                         mainHandler.post {
@@ -154,6 +154,15 @@ class MainActivity : FlutterActivity() {
         "objectTargetVerified" -> ObjectTargets.verified(this, call.argument<String>("target") ?: "")
 
         "history" -> AlarmDismissal.history(this)
+        "pendingCheckIns" -> AlarmSessions.all(this).filter {
+            it.phase == "checkin" && System.currentTimeMillis() < it.checkAt + StayAwake.GRACE_MS
+        }.sortedBy { it.checkAt }.map {
+            mapOf("id" to it.alarm.id, "sessionId" to it.token, "label" to it.alarm.label,
+                "dueAt" to it.checkAt, "expiresAt" to it.checkAt + StayAwake.GRACE_MS)
+        }
+        "confirmCheckIn" -> StayAwake.confirm(this,
+            call.argument<String>("id") ?: throw IllegalArgumentException("id is required"),
+            call.argument<String>("sessionId"))
         "clearHistory" -> { AlarmEvents.clear(this); null }
         "practice" -> {
             check(AlarmSessions.active(this) == null) { "Finish the ringing alarm before practicing" }

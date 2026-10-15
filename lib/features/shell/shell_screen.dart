@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/alarm.dart';
 import '../challenges/wake_up_qr.dart';
+import '../checkins/stay_awake_banner.dart';
 import '../alarms/alarm_editor_screen.dart';
 import '../alarms/alarm_controller.dart';
 import '../alarms/alarms_screen.dart';
@@ -18,7 +19,7 @@ import '../settings/settings_screen.dart';
 import '../settings/settings_screen_view_model.dart';
 import 'shell_screen_view_model.dart';
 import '../../shared/toast.dart';
-import '../../shared/view_model.dart';
+import 'package:provider/provider.dart';
 
 /// The app shell: onboarding gate, the four tabs, and the alarm editor
 /// flow that can bounce through Health when camera access is missing.
@@ -33,7 +34,7 @@ class ShellScreen extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!viewModel.settings.settings.onboardingDone) {
-      return ViewModelProvider<OnboardingScreenViewModel>(
+      return ChangeNotifierProvider<OnboardingScreenViewModel>(
         create: (_) => OnboardingScreenViewModel(
           viewModel.controller,
           onDone: () async {
@@ -44,82 +45,116 @@ class ShellScreen extends StatelessWidget {
             );
           },
         ),
-        builder: (_, vm) => OnboardingScreen(viewModel: vm),
+        child: Consumer<OnboardingScreenViewModel>(
+          builder: (_, vm, _) => OnboardingScreen(viewModel: vm),
+        ),
       );
     }
 
     final fatalError = viewModel.controller.fatalError;
     return Scaffold(
-      body: fatalError != null
-          ? _FatalErrorView(
-              message: fatalError,
-              onRetry: viewModel.controller.retry,
-            )
-          : IndexedStack(
-              index: viewModel.tab,
-              children:
-                  <Widget>[
-                        ViewModelProvider<AlarmsScreenViewModel>(
-                          create: (_) =>
-                              AlarmsScreenViewModel(viewModel.controller),
-                          builder: (_, vm) => AlarmsScreen(
-                            viewModel: vm,
-                            onOpenHealth: viewModel.openHealth,
-                            onOpen: (alarm) => _openEditor(
-                              context,
-                              viewModel,
-                              existing: alarm,
-                            ),
-                          ),
-                        ),
-                        ViewModelProvider<HealthScreenViewModel>(
-                          create: (_) =>
-                              HealthScreenViewModel(viewModel.controller),
-                          builder: (_, vm) => HealthScreen(
-                            viewModel: vm,
-                            // Shown whenever Health was reached from the alarm flow, even
-                            // without a draft: the user should be able to get back.
-                            onReturnToAlarm:
-                                viewModel.pendingCameraDraft == null &&
-                                    !viewModel.cameFromAlarm
-                                ? null
-                                : () {
-                                    final draft = viewModel.pendingCameraDraft;
-                                    if (draft == null) {
-                                      viewModel.selectTab(0);
-                                    } else {
-                                      unawaited(
-                                        _openEditor(
-                                          context,
-                                          viewModel,
-                                          existing: draft,
-                                        ),
-                                      );
-                                    }
-                                  },
-                          ),
-                        ),
-                        ViewModelProvider<HistoryScreenViewModel>(
-                          create: (_) =>
-                              HistoryScreenViewModel(viewModel.controller),
-                          builder: (_, vm) => HistoryScreen(viewModel: vm),
-                        ),
-                        ViewModelProvider<SettingsScreenViewModel>(
-                          create: (_) => SettingsScreenViewModel(
-                            viewModel.controller,
-                            viewModel.settings,
-                          ),
-                          builder: (_, vm) => SettingsScreen(viewModel: vm),
-                        ),
-                      ].indexed
-                      .map(
-                        (entry) => _LazyTab(
-                          active: viewModel.tab == entry.$1,
-                          child: entry.$2,
-                        ),
-                      )
-                      .toList(),
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * 0.5,
+              ),
+              child: StayAwakeBanner(
+                engine: viewModel.engine,
+                controller: viewModel.controller,
+              ),
             ),
+            Expanded(
+              child: fatalError != null
+                  ? _FatalErrorView(
+                      message: fatalError,
+                      onRetry: viewModel.controller.retry,
+                    )
+                  : IndexedStack(
+                      index: viewModel.tab,
+                      children:
+                          <Widget>[
+                                ChangeNotifierProvider<AlarmsScreenViewModel>(
+                                  create: (_) => AlarmsScreenViewModel(
+                                    viewModel.controller,
+                                  ),
+                                  child: Consumer<AlarmsScreenViewModel>(
+                                    builder: (_, vm, _) => AlarmsScreen(
+                                      viewModel: vm,
+                                      onOpenHealth: viewModel.openHealth,
+                                      onOpen: (alarm) => _openEditor(
+                                        context,
+                                        viewModel,
+                                        existing: alarm,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                ChangeNotifierProvider<HealthScreenViewModel>(
+                                  create: (_) => HealthScreenViewModel(
+                                    viewModel.controller,
+                                  ),
+                                  child: Consumer<HealthScreenViewModel>(
+                                    builder: (_, vm, _) => HealthScreen(
+                                      viewModel: vm,
+                                      // Shown whenever Health was reached from the alarm flow, even
+                                      // without a draft: the user should be able to get back.
+                                      onReturnToAlarm:
+                                          viewModel.pendingCameraDraft ==
+                                                  null &&
+                                              !viewModel.cameFromAlarm
+                                          ? null
+                                          : () {
+                                              final draft =
+                                                  viewModel.pendingCameraDraft;
+                                              if (draft == null) {
+                                                viewModel.selectTab(0);
+                                              } else {
+                                                unawaited(
+                                                  _openEditor(
+                                                    context,
+                                                    viewModel,
+                                                    existing: draft,
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                    ),
+                                  ),
+                                ),
+                                ChangeNotifierProvider<HistoryScreenViewModel>(
+                                  create: (_) => HistoryScreenViewModel(
+                                    viewModel.controller,
+                                  ),
+                                  child: Consumer<HistoryScreenViewModel>(
+                                    builder: (_, vm, _) =>
+                                        HistoryScreen(viewModel: vm),
+                                  ),
+                                ),
+                                ChangeNotifierProvider<SettingsScreenViewModel>(
+                                  create: (_) => SettingsScreenViewModel(
+                                    viewModel.controller,
+                                    viewModel.settings,
+                                  ),
+                                  child: Consumer<SettingsScreenViewModel>(
+                                    builder: (_, vm, _) =>
+                                        SettingsScreen(viewModel: vm),
+                                  ),
+                                ),
+                              ].indexed
+                              .map(
+                                (entry) => _LazyTab(
+                                  active: viewModel.tab == entry.$1,
+                                  child: entry.$2,
+                                ),
+                              )
+                              .toList(),
+                    ),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: viewModel.tab,
         onDestinationSelected: viewModel.selectTab,

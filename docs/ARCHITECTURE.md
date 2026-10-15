@@ -81,6 +81,16 @@ quotas consuming the response window. An unanswered check produces one follow-up
 with no snooze; dismissing it cannot create another check-in. A substantially
 overdue check-in restored after reboot expires instead of sounding hours later.
 
+The prompt notification carries a full-screen PendingIntent for the native
+`StayAwakeActivity`, allowing Android to present the response page over the lock
+screen when full-screen alerts are permitted. Tapping the notification opens the
+same page. The Flutter shell also presents a `Consumer<StayAwakeViewModel>` card
+while a response window is active. Page, card and notification action all use
+`StayAwake.confirm`, which checks the persisted token, phase and original deadline.
+Opening, closing or recreating the page never confirms or extends a check-in.
+The page closes when its window expires or another surface confirms it; the native
+deadline receiver remains responsible for the follow-up alarm.
+
 ## UI and camera
 
 Practice uses the same native screen but no ringing session, audio, scheduling

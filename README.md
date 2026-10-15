@@ -64,18 +64,36 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
 
 ## Screenshots
 
-Captured on a real Android device (1080×2400).
+Captured on a Samsung SM-A075F physical device (720×1600). Home contains sample
+alarms; History includes a completed scheduled alarm. Challenge images show
+practice mode.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding.jpg" width="16%" alt="Onboarding" />
-  <img src="docs/screenshots/home.jpg" width="16%" alt="Alarm list" />
-  <img src="docs/screenshots/settings.jpg" width="16%" alt="Settings and wake-up QR" />
-  <img src="docs/screenshots/challenge.jpg" width="16%" alt="Wake challenge" />
-  <img src="docs/screenshots/health.jpg" width="16%" alt="Alarm readiness checks" />
-  <img src="docs/screenshots/history.jpg" width="16%" alt="Wake-up history and streaks" />
+  <img src="docs/screenshots/onboarding.png" width="16%" alt="Onboarding" />
+  <img src="docs/screenshots/home.png" width="16%" alt="Alarm list" />
+  <img src="docs/screenshots/settings.png" width="16%" alt="Settings and wake-up QR" />
+  <img src="docs/screenshots/challenge-face.png" width="16%" alt="Face challenge practice" />
+  <img src="docs/screenshots/health.png" width="16%" alt="Alarm readiness checks" />
+  <img src="docs/screenshots/history.png" width="16%" alt="Wake-up history and streaks" />
 </p>
 
 <p align="center"><sub>Onboarding · Alarms · Settings · Challenge · Health · History</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/challenge-tap.png" width="19%" alt="Tap-to-stop practice" />
+  <img src="docs/screenshots/challenge-face.png" width="19%" alt="Face challenge practice" />
+  <img src="docs/screenshots/challenge-object-sink.png" width="19%" alt="Find a sink practice" />
+  <img src="docs/screenshots/challenge-object-cup.png" width="19%" alt="Find a cup practice" />
+  <img src="docs/screenshots/challenge-qr.png" width="19%" alt="QR challenge practice" />
+</p>
+
+<p align="center"><sub>Tap to stop · Face · Sink · Cup · QR code</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/challenge-success.jpg" width="25%" alt="Challenge practice completed successfully" />
+</p>
+
+<p align="center"><sub>Challenge success</sub></p>
 
 ## What makes an alarm ring
 
@@ -138,7 +156,7 @@ Or via the Makefile (`make help` lists everything):
 ```sh
 make release-key     # once: create the upload keystore
 make release         # checks + tests + signed AAB and APK
-make release-verify  # verify the AAB signature
+make release-verify  # verify every AAB entry against the configured upload key
 ```
 
 Android's application ID, namespace and Kotlin package are `com.bling.wakeguard`.

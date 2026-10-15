@@ -33,6 +33,10 @@ class DeviceGuidance {
     TargetPlatform.android =>
       'Allow alarms in Do Not Disturb and check Alarm volume. If an alarm '
           'arrives late, allow WakeGuard to run without battery restrictions. '
+          'While unlocked outside WakeGuard, Android may show a notification '
+          'instead of opening the challenge. On Samsung, check Show as pop-up '
+          'for Ringing alarms and try Detailed notification pop-ups if Brief '
+          'pop-ups or Edge lighting hide the alert. '
           'Setting names vary by phone brand.',
     TargetPlatform.iOS =>
       'Allow WakeGuard notifications and sounds in your iPhone’s Settings. '

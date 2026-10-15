@@ -5,6 +5,7 @@
 #   DART     dart binary           (default: dart)
 #   PYTHON   python interpreter    (default: python3)
 #   ADB      adb binary            (default: adb)
+#   JAVA     JDK 17+ java binary   (default: java)
 #   DEVICE   flutter run -d target (default: unset, uses an attached device)
 
 .DEFAULT_GOAL := help
@@ -13,6 +14,7 @@ FLUTTER ?= flutter
 DART ?= dart
 PYTHON ?= python3
 ADB ?= adb
+JAVA ?= java
 
 APK := build/app/outputs/flutter-apk/app-release.apk
 APK-DEBUG := build/app/outputs/flutter-apk/app-debug.apk
@@ -66,8 +68,8 @@ help:
 	@echo "  Release (Android, Play Store)"
 	@echo "    make release-key      Create the upload keystore (once; refuses to overwrite)"
 	@echo "    make release-check    Fail early if signing is not configured"
-	@echo "    make release          check + test + signed AAB and APK"
-	@echo "    make release-verify   Verify the signature of the built AAB"
+	@echo "    make release          Ordered checks + tests + signed AAB/APK + verification"
+	@echo "    make release-verify   Require every AAB entry to match the upload certificate"
 	@echo ""
 	@echo "  Device"
 	@echo "    make install          Install the debug APK"
@@ -77,7 +79,7 @@ help:
 	@echo "    make logcat-alarm     Tail alarm-manager logs only"
 	@echo "    make forward          Forward Flutter observatory-style ports (optional)"
 	@echo ""
-	@echo "  Variables: FLUTTER DART PYTHON ADB DEVICE"
+	@echo "  Variables: FLUTTER DART PYTHON ADB JAVA DEVICE"
 
 # --- Setup -------------------------------------------------------------------
 
@@ -168,22 +170,24 @@ release-key:
 	$(PYTHON) tool/create_android_upload_key.py
 
 release-check:
-	@if [ -z "$$WAKEGUARD_KEYSTORE" ] && [ ! -f android/key.properties ]; then \
-		echo "Release signing is not configured."; \
-		echo "Run 'make release-key' or copy android/key.properties.example to android/key.properties."; \
-		exit 1; \
-	fi
-	@echo "Release signing configuration found."
+	$(JAVA) tool/VerifyAndroidRelease.java android --check
 
-release: release-check check test build-aab build-apk-release
+# Separate recursive invocations enforce stages even under `make -j release`.
+release:
+	$(MAKE) release-check
+	$(MAKE) check
+	$(MAKE) test
+	$(MAKE) build-aab
+	$(MAKE) build-apk-release
+	$(MAKE) release-verify
 	@echo ""
 	@echo "Bundle (upload to Play): $(AAB)"
 	@echo "APK (sideload testing):  $(APK)"
-	@echo "Next: make release-verify, then complete docs/VERIFICATION.md on real devices."
+	@echo "Next: complete docs/VERIFICATION.md on real devices."
 
 release-verify:
 	@test -f $(AAB) || { echo "Missing $(AAB); run 'make build-aab' first."; exit 1; }
-	jarsigner -verify -verbose:summary $(AAB)
+	$(JAVA) tool/VerifyAndroidRelease.java android "$(AAB)"
 
 # --- Device ------------------------------------------------------------------
 
