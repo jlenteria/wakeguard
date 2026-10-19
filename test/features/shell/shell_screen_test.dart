@@ -95,7 +95,18 @@ void main() {
         openEditor();
         await tester.pumpAndSettle();
         expect(find.byType(AlarmEditor), findsOneWidget);
-        await tester.ensureVisible(find.text('Save alarm'));
+        // The editor list builds lazily, so scroll until Save really exists.
+        await tester.scrollUntilVisible(
+          find.text('Save alarm'),
+          300,
+          scrollable: find
+              .descendant(
+                of: find.byType(AlarmEditor),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Save alarm'));
         await tester.pumpAndSettle();
         expect(shell.tab, 1);
@@ -109,7 +120,18 @@ void main() {
         await tester.scrollUntilVisible(find.text('Return to alarm'), -150);
         await tester.tap(find.text('Return to alarm'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Save alarm'));
+        // The editor list builds lazily, so scroll until Save really exists.
+        await tester.scrollUntilVisible(
+          find.text('Save alarm'),
+          300,
+          scrollable: find
+              .descendant(
+                of: find.byType(AlarmEditor),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Save alarm'));
         await tester.pumpAndSettle();
 

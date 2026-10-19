@@ -69,6 +69,12 @@ data class StoredAlarm(
     val needsSetup: Boolean = false,
     val skipUntilMillis: Long = 0L,
     val nextTriggerAt: Long = 0L,
+    /** File name inside [CustomSounds] storage; empty means the bundled [soundPack] tone. */
+    val customSound: String = "",
+    /** The picked file's display name, for the editor only. */
+    val customSoundName: String = "",
+    /** Whether the phone vibrates while this alarm rings, alongside the tone. */
+    val vibrate: Boolean = true,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -89,6 +95,9 @@ data class StoredAlarm(
         put("needsSetup", needsSetup)
         put("skipUntilMillis", skipUntilMillis)
         put("nextTriggerAt", nextTriggerAt)
+        put("customSound", customSound)
+        put("customSoundName", customSoundName)
+        put("vibrate", vibrate)
     }
 
     /** Stable positive notification id derived from the opaque string id. */
@@ -135,6 +144,9 @@ data class StoredAlarm(
                 needsSetup = needsSetup,
                 skipUntilMillis = json.optLong("skipUntilMillis", 0L),
                 nextTriggerAt = json.optLong("nextTriggerAt", 0L),
+                customSound = json.optString("customSound", ""),
+                customSoundName = json.optString("customSoundName", ""),
+                vibrate = json.optBoolean("vibrate", true),
             )
         }.getOrNull()
     }

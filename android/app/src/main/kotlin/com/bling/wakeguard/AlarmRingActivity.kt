@@ -318,8 +318,8 @@ class AlarmRingActivity : AppCompatActivity() {
 
     private fun openCamera(requestPermission: Boolean = false) {
         if (destroyed || challengeComplete || mode == Mode.TAP) return
-        // onCreate/onStart can run before the lifecycle registry reaches STARTED.
-        // onResume posts a retry after the framework has completed that transition.
+        // onCreate can run before the lifecycle registry reaches STARTED. onStart and
+        // onResume post a retry (startCameraWhenReady) once the view and lifecycle are ready.
         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
         if (!hasCameraPermission()) {
             cameraUnavailable = true
@@ -340,7 +340,11 @@ class AlarmRingActivity : AppCompatActivity() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             cameraStarting = false
-            if (destroyed || challengeComplete || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@addListener
+            if (destroyed || challengeComplete) return@addListener
+            if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                startCameraWhenReady()
+                return@addListener
+            }
             if (expected != generation) { openCamera(); return@addListener }
             runCatching { bindCamera(future.get()) }.onFailure { cameraError("Could not open the camera. Close other camera apps and retry.", it) }
         }, ContextCompat.getMainExecutor(this))
@@ -627,14 +631,26 @@ class AlarmRingActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         if (::guide.isInitialized && !challengeComplete) guide.scanning = mode != Mode.TAP
+        startCameraWhenReady()
     }
     override fun onResume() {
         super.onResume()
         AlarmChallengeLauncher.onResumed(this)
-        if (!::preview.isInitialized) return
+        startCameraWhenReady()
+    }
+
+    /**
+     * The preview surface exists only once the window is attached (after onResume),
+     * and the lifecycle registry can still be a step behind at that moment. Post the
+     * bind until the view exists and gate on STARTED, which is all openCamera needs.
+     * Gating on RESUMED dropped the only startup attempt, leaving the challenge idle
+     * until a mode button was tapped again.
+     */
+    private fun startCameraWhenReady() {
+        if (!::preview.isInitialized || destroyed || challengeComplete || mode == Mode.TAP) return
         preview.post {
             if (!destroyed && !challengeComplete &&
-                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                 openCamera(requestPermission = true)
             }
         }

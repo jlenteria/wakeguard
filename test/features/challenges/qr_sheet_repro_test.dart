@@ -24,9 +24,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     // QR is opt-in: the code field and its generate button only appear once on.
-    await reveal(find.widgetWithText(FilterChip, 'QR code'));
+    await reveal(find.widgetWithText(ListTile, 'QR code'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
+    await tester.tap(find.widgetWithText(ListTile, 'QR code'));
     await tester.pumpAndSettle();
     await reveal(find.byIcon(Icons.qr_code_2_outlined));
     await tester.tap(find.byIcon(Icons.qr_code_2_outlined));

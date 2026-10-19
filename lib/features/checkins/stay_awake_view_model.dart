@@ -58,8 +58,9 @@ class StayAwakeViewModel extends ViewModel with WidgetsBindingObserver {
         _refreshing ||
         _confirming ||
         !_foreground ||
-        disposed)
+        disposed) {
       return;
+    }
     _refreshing = true;
     final revision = _refreshRevision;
     try {

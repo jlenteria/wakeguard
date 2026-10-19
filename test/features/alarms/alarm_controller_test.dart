@@ -73,7 +73,10 @@ class _FakeEngine implements AlarmEngine {
   Future<bool> requestPermissions() async => true;
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async {}
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  }) async {}
 
   @override
   Future<void> stopAudibilitySample() async {

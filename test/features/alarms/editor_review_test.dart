@@ -8,7 +8,10 @@ import 'package:wakeguard/platform/alarm_engine.dart';
 class _PreviewEngine extends EngineUnavailable {
   Completer<void>? stopGate;
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async {
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  }) async {
     throw EngineException('PREVIEW', 'Sound unavailable');
   }
 

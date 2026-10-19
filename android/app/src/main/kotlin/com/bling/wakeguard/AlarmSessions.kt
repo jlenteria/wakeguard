@@ -61,7 +61,24 @@ object AlarmSessions {
                 j.optLong("occurrenceStartedAt", j.getLong("startedAt")), j.optLong("occurrenceElapsed"), j.optInt("occurrenceBoot", -1))
         }.getOrNull()
     }
-    fun active(context: Context) = all(context).firstOrNull { it.phase == "ringing" }
+    fun active(context: Context) = all(context).firstOrNull { it.phase == "ringing" && !isStale(context, it) }
+
+    /**
+     * A ringing session past the ring window is dead: the service and watchdog that would have
+     * expired it were killed with the process. Left "active", it queues every later alarm silently.
+     */
+    private fun isStale(context: Context, session: AlarmSession) =
+        session.phase == "ringing" && session.elapsed(context) >= AlarmDefaults.MAX_RINGING_MS
+
+    /** Retires dead ringing sessions so they cannot hold back the alarms behind them. */
+    fun expireStale(context: Context) {
+        for (session in all(context)) {
+            if (!isStale(context, session)) continue
+            android.util.Log.w("WakeGuard", "Expiring orphaned ringing session for ${session.alarm.id}")
+            runCatching { expire(context, session) }
+                .onFailure { android.util.Log.e("WakeGuard", "Could not expire orphaned session", it) }
+        }
+    }
     fun matches(context: Context, id: String, token: String?) =
         token != null && get(context, id)?.token == token
 
@@ -70,6 +87,7 @@ object AlarmSessions {
     }
 
     fun begin(context: Context, alarm: StoredAlarm, scheduledAt: Long, recordStart: Boolean = true): AlarmSession {
+        expireStale(context)
         if (get(context, alarm.id)?.phase != "done") invalidate(context, alarm.id)
         val queued = active(context) != null
         val session = AlarmSession(UUID.randomUUID().toString(), alarm, scheduledAt,

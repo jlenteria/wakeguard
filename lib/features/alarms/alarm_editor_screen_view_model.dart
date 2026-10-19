@@ -6,6 +6,7 @@ import '../../models/alarm.dart';
 import '../challenges/wake_up_qr.dart';
 import '../../platform/alarm_engine.dart';
 import '../../shared/view_model.dart';
+import 'tone_names.dart';
 
 /// All state for creating or editing one alarm, from the preset chips down to
 /// the text controllers and the QR secret.
@@ -29,6 +30,9 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
     weekdays = {...?existing?.weekdays};
     difficulty = existing?.difficulty ?? ChallengeDifficulty.moderate;
     soundPack = existing?.soundPack ?? AlarmSoundPack.pulse;
+    customSoundId = existing?.customSoundId ?? '';
+    customSoundName = existing?.customSoundName ?? '';
+    vibrate = existing?.vibrate ?? true;
     snoozeMinutes =
         existing?.snoozeMinutes ??
         defaultSnoozeMinutes ??
@@ -66,6 +70,9 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
   late Set<int> weekdays;
   late ChallengeDifficulty difficulty;
   late AlarmSoundPack soundPack;
+  late String customSoundId;
+  late String customSoundName;
+  late bool vibrate;
   late int snoozeMinutes;
   late int checkInMinutes;
   late WakeObject objectTarget;
@@ -77,6 +84,18 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
   String? validationError;
   int? previewing;
   bool practicing = false;
+  bool pickingSound = false;
+
+  /// The device's own alarm tones, loaded once when the picker is shown.
+  List<PickedSound> systemSounds = const [];
+  bool systemSoundsLoading = false;
+  String? systemSoundsError;
+
+  /// The uri being imported (copied into storage), so that row shows a spinner.
+  String importingUri = '';
+
+  /// [previewing] value while the uploaded tone plays; bundled packs use their index.
+  static const customPreviewIndex = -1;
 
   String get trimmedQr => qrController.text.trim();
   bool get hasQrValue => trimmedQr.isNotEmpty;
@@ -84,6 +103,85 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
   bool get usesSharedQr => sharedQrValue != null && trimmedQr == sharedQrValue;
   bool get isExisting => existing != null;
   bool get previewingAny => previewing != null;
+  bool get previewingCustom => previewing == customPreviewIndex;
+  bool get hasCustomSound => customSoundId.isNotEmpty;
+
+  CustomSoundEngine? get _customEngine {
+    final engine = this.engine;
+    return engine is CustomSoundEngine ? engine as CustomSoundEngine : null;
+  }
+
+  /// Uploading is offered only where the platform can store and play the file.
+  bool get canUseCustomSound => _customEngine?.supportsCustomSounds ?? false;
+
+  /// Whether a device sound with [name] is the one currently chosen.
+  bool isSoundSelected(String name) =>
+      hasCustomSound && customSoundName == name;
+
+  void setVibrate(bool value) {
+    vibrate = value;
+    safeNotify();
+  }
+
+  /// Loads the device's own alarm tones once; safe to call on every build.
+  Future<void> loadSystemSounds() async {
+    final custom = _customEngine;
+    if (custom == null || systemSoundsLoading || systemSounds.isNotEmpty) {
+      return;
+    }
+    systemSoundsLoading = true;
+    systemSoundsError = null;
+    safeNotify();
+    try {
+      final sounds = await custom.listSystemSounds();
+      if (disposed) return;
+      // Titles like "光阴;Time" become "Time"; a title with no English at all
+      // gets a neutral numbered name so the list stays English-only.
+      systemSounds = [
+        for (var i = 0; i < sounds.length; i++)
+          PickedSound(
+            id: sounds[i].id,
+            name: englishToneName(sounds[i].name) ?? 'Alarm tone ${i + 1}',
+          ),
+      ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    } on EngineException catch (error) {
+      if (disposed) return;
+      systemSoundsError = error.message;
+    } catch (error) {
+      if (disposed) return;
+      systemSoundsError = '$error';
+    } finally {
+      systemSoundsLoading = false;
+      safeNotify();
+    }
+  }
+
+  /// Copies the device sound into app storage so it rings reliably; null on success.
+  Future<String?> selectSystemSound(PickedSound sound) async {
+    final custom = _customEngine;
+    if (custom == null || importingUri.isNotEmpty || saving) return null;
+    // Already the chosen sound: selecting again is a no-op.
+    if (isSoundSelected(sound.name)) return null;
+    importingUri = sound.id;
+    safeNotify();
+    try {
+      await engine?.stopAudibilitySample();
+      final stored = await custom.importSystemSound(sound.id);
+      if (disposed) return null;
+      customSoundId = stored.id;
+      // Keep the name shown in the list (not the file's), so the same row stays
+      // checked now and after the alarm is reopened.
+      customSoundName = sound.name;
+      return null;
+    } on EngineException catch (error) {
+      return error.message;
+    } catch (error) {
+      return '$error';
+    } finally {
+      importingUri = '';
+      safeNotify();
+    }
+  }
 
   void setTime(TimeOfDay value) {
     time = value;
@@ -166,9 +264,63 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
     safeNotify();
   }
 
+  /// Choosing a bundled tone replaces an uploaded one; the file is cleaned up natively.
   void setSoundPack(AlarmSoundPack value) {
     soundPack = value;
+    customSoundId = '';
+    customSoundName = '';
     safeNotify();
+  }
+
+  /// Returns an error message, or null when a file was chosen or the picker was cancelled.
+  Future<String?> pickCustomSound() async {
+    final custom = _customEngine;
+    if (custom == null || pickingSound || saving) return null;
+    pickingSound = true;
+    safeNotify();
+    try {
+      await engine?.stopAudibilitySample();
+      final picked = await custom.pickCustomSound();
+      if (disposed || picked == null) return null;
+      customSoundId = picked.id;
+      customSoundName = picked.name;
+      return null;
+    } on EngineException catch (error) {
+      return error.message;
+    } catch (error) {
+      return '$error';
+    } finally {
+      pickingSound = false;
+      safeNotify();
+    }
+  }
+
+  void removeCustomSound() {
+    if (!hasCustomSound) return;
+    customSoundId = '';
+    customSoundName = '';
+    safeNotify();
+  }
+
+  /// Returns an error message, or null when the uploaded tone started playing.
+  Future<String?> previewCustom() async {
+    final custom = _customEngine;
+    if (custom == null || !hasCustomSound) return null;
+    if (previewingAny || saving) return null;
+    previewing = customPreviewIndex;
+    safeNotify();
+    try {
+      // Vibrate only when this alarm is set to, so the preview matches the ring.
+      await custom.previewCustomSound(customSoundId, vibrate: vibrate);
+      return null;
+    } on EngineException catch (error) {
+      return error.message;
+    } catch (error) {
+      return '$error';
+    } finally {
+      previewing = null;
+      safeNotify();
+    }
   }
 
   void setSnoozeMinutes(int value) {
@@ -214,7 +366,8 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
         : ChallengeDifficulty.gentle;
     escapes = switch (index) {
       0 => {EscapeKind.tap},
-      2 => {EscapeKind.object},
+      // Getting out of bed means leaving the room: object or a scan away from bed.
+      2 => {EscapeKind.object, EscapeKind.qr},
       _ => {EscapeKind.face},
     };
     snoozeMinutes = index == 0 ? 9 : 0;
@@ -229,7 +382,7 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
     safeNotify();
     try {
       // Audible regardless of notification volume on both platforms: the point of the check.
-      await engine?.playAudibilitySample(soundPack: pack);
+      await engine?.playAudibilitySample(soundPack: pack, vibrate: vibrate);
       return null;
     } catch (error) {
       return '$error';
@@ -313,6 +466,9 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
       qrValue: qrController.text.trim(),
       difficulty: difficulty,
       soundPack: soundPack,
+      customSoundId: customSoundId,
+      customSoundName: customSoundName,
+      vibrate: vibrate,
       snoozeMinutes: snoozeMinutes,
       escapes: {...escapes},
       checkInMinutes: checkInMinutes,

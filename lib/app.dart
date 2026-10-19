@@ -23,6 +23,43 @@ class WakeGuardApp extends StatefulWidget {
 
   @override
   State<WakeGuardApp> createState() => _WakeGuardAppState();
+
+  /// The app theme. Public so tests can assert light/dark tokens.
+  static ThemeData themeFor(Brightness brightness) {
+    final light = brightness == Brightness.light;
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xffef5b2a),
+      brightness: brightness,
+    );
+    // Light mode is plain white everywhere: pages, the add/edit sheet, the bar.
+    // Dark mode keeps a dark sheet but lifts the cards above it so they read.
+    const white = Colors.white;
+    return ThemeData(
+      colorScheme: light ? scheme.copyWith(surface: white) : scheme,
+      scaffoldBackgroundColor: light ? white : scheme.surfaceContainerLowest,
+      appBarTheme: light
+          ? const AppBarTheme(
+              backgroundColor: white,
+              surfaceTintColor: Colors.transparent,
+            )
+          : null,
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: light ? white : scheme.surfaceContainerLowest,
+        modalBackgroundColor: light ? white : scheme.surfaceContainerLowest,
+        surfaceTintColor: Colors.transparent,
+      ),
+      cardTheme: CardThemeData(
+        color: light ? null : scheme.surfaceContainerHigh,
+      ),
+      navigationBarTheme: light
+          ? const NavigationBarThemeData(
+              backgroundColor: white,
+              surfaceTintColor: Colors.transparent,
+            )
+          : const NavigationBarThemeData(surfaceTintColor: Colors.transparent),
+      useMaterial3: true,
+    );
+  }
 }
 
 class _WakeGuardAppState extends State<WakeGuardApp> {
@@ -55,8 +92,8 @@ class _WakeGuardAppState extends State<WakeGuardApp> {
       builder: (context, _) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'WakeGuard',
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
+        theme: WakeGuardApp.themeFor(Brightness.light),
+        darkTheme: WakeGuardApp.themeFor(Brightness.dark),
         themeMode: switch (_settings.settings.themeMode) {
           ThemeModeSetting.system => ThemeMode.system,
           ThemeModeSetting.light => ThemeMode.light,
@@ -75,12 +112,4 @@ class _WakeGuardAppState extends State<WakeGuardApp> {
       ),
     );
   }
-
-  static ThemeData _theme(Brightness brightness) => ThemeData(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xffef5b2a),
-      brightness: brightness,
-    ),
-    useMaterial3: true,
-  );
 }

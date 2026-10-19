@@ -152,7 +152,7 @@ class _ActivityDayHeading extends StatelessWidget {
         runSpacing: 6,
         children: [
           Text(
-            'Activity Log',
+            'Activity log',
             style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           Wrap(

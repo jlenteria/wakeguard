@@ -3,24 +3,155 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakeguard/models/alarm.dart';
+import 'package:wakeguard/shared/choice_pill.dart';
 import 'package:wakeguard/platform/alarm_engine.dart';
 import 'package:wakeguard/features/alarms/alarm_editor_screen.dart';
 import 'package:wakeguard/features/challenges/qr_sheet.dart';
 
 void main() {
-  Future<void> reveal(WidgetTester tester, Finder finder, double delta) =>
-      tester.scrollUntilVisible(
-        finder,
-        delta,
-        scrollable: find
-            .descendant(
-              of: find.byType(ListView),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
+  Future<void> reveal(WidgetTester tester, Finder finder, double delta) async {
+    await tester.scrollUntilVisible(
+      finder,
+      delta,
+      // The outermost scrollable is the editor list. (A TextField adds its own
+      // inner Scrollable, which would otherwise be picked up by .first.)
+      scrollable: find.byType(Scrollable).first,
+    );
+    // Bring the row fully on screen and let the scroll settle, so taps land.
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+  }
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('selected options keep the card background, no tint', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AlarmEditor())),
+    );
+    await tester.pumpAndSettle();
+    // Quick setup presets are ListTiles; the selected one must not tint its row.
+    final simple = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, 'Simple'),
+    );
+    expect(simple.selectedTileColor, Colors.transparent);
+  });
+
+  testWidgets('a focused field is kept above the keyboard', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AlarmEditor())),
+    );
+    await tester.pumpAndSettle();
+
+    // Focus the label by hand (it is no longer autofocused), then the keyboard.
+    final label = find.widgetWithText(TextField, 'Label');
+    await reveal(tester, label, 250);
+    await tester.tap(label);
+    await tester.pumpAndSettle();
+    const keyboard = 300.0;
+    tester.view.viewInsets = FakeViewPadding(
+      bottom: tester.view.devicePixelRatio * keyboard,
+    );
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+
+    final logicalHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final keyboardTop = logicalHeight - keyboard;
+    final field = tester.getRect(find.widgetWithText(TextField, 'Label'));
+    expect(field.bottom, lessThanOrEqualTo(keyboardTop + 1));
+  });
+
+  testWidgets('Face steps sit under the Face choice, only while it is on', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AlarmEditor(engine: _PickerEngine())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final face = find.widgetWithText(ListTile, 'Face');
+    await reveal(tester, face, 250);
+    bool stepsShown() =>
+        find.text('Face challenge steps').evaluate().isNotEmpty;
+
+    // Whatever the default, the steps follow the Face switch exactly.
+    final onByDefault = stepsShown();
+    if (onByDefault) {
+      expect(find.text('Gentle (1)'), findsOneWidget);
+    }
+
+    await tester.tap(face);
+    await tester.pumpAndSettle();
+    expect(stepsShown(), !onByDefault);
+
+    await tester.tap(find.widgetWithText(ListTile, 'Face'));
+    await tester.pumpAndSettle();
+    expect(stepsShown(), onByDefault);
+  });
+
+  testWidgets('the time card says it is tappable and opens the picker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AlarmEditor())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Tap to change time'), findsOneWidget);
+    expect(find.text('Alarm time'), findsOneWidget);
+
+    await tester.tap(find.text('Tap to change time'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+  });
+
+  testWidgets('the label is a card with a hint', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AlarmEditor())),
+    );
+    await tester.pumpAndSettle();
+    await reveal(tester, find.widgetWithText(TextField, 'Label'), 250);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.label_outline), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Label'), findsOneWidget);
+
+    // Not focused on open, so no keyboard jumps up.
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Label'))
+          .autofocus,
+      isFalse,
+    );
+    // Tapping the field gives it focus, so the focused outline is painted.
+    await tester.tap(find.widgetWithText(TextField, 'Label'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+
+    OutlineInputBorder? focused() {
+      final field = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Label'),
+      );
+      return field.decoration?.focusedBorder as OutlineInputBorder?;
+    }
+
+    // No outline at rest, a visible one when focused.
+    final decoration = tester
+        .widget<TextField>(find.widgetWithText(TextField, 'Label'))
+        .decoration!;
+    expect(
+      (decoration.enabledBorder as OutlineInputBorder).borderSide.style,
+      BorderStyle.none,
+    );
+    expect(focused()!.borderSide.width, greaterThan(0));
+    expect(focused()!.borderSide.style, BorderStyle.solid);
   });
 
   testWidgets('QR secret can be generated and the code renders', (
@@ -58,8 +189,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // QR is opt-in: turning the chip on must produce a code, not an empty field.
-    await tester.ensureVisible(find.widgetWithText(FilterChip, 'QR code'));
-    await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
+    await reveal(tester, find.widgetWithText(ListTile, 'QR code'), 250);
+    await tester.ensureVisible(find.widgetWithText(ListTile, 'QR code'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'QR code'));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byIcon(Icons.qr_code_2_outlined));
@@ -86,8 +219,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.widgetWithText(FilterChip, 'QR code'));
-      await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
+      await reveal(tester, find.widgetWithText(ListTile, 'QR code'), 250);
+      await tester.ensureVisible(find.widgetWithText(ListTile, 'QR code'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'QR code'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byIcon(Icons.qr_code_2_outlined));
       await tester.tap(find.byIcon(Icons.qr_code_2_outlined));
@@ -100,19 +235,55 @@ void main() {
     expect(secrets.length, 3, reason: 'Random.secure must not repeat');
   });
 
-  testWidgets('editor offers every sound family with a preview control', (
+  testWidgets('sound picker lists the phone tones, not the bundled packs', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: AlarmEditor())),
+      MaterialApp(
+        home: Scaffold(body: AlarmEditor(engine: _PickerEngine())),
+      ),
     );
     await tester.pumpAndSettle();
 
+    final row = find.widgetWithText(ListTile, 'Sound');
+    await reveal(tester, row, 250);
+    // Nothing is listed until the Sound row is tapped.
+    expect(find.text('Aurora'), findsNothing);
+    expect(find.byType(SwitchListTile), findsNothing);
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('Aurora'), findsOneWidget);
+    expect(find.text('Nebula'), findsOneWidget);
+    expect(find.text('Upload your own sound'), findsOneWidget);
+    expect(find.text('Alarm tone'), findsOneWidget);
+    // Vibration lives in the same sheet.
+    expect(find.widgetWithText(SwitchListTile, 'Vibration'), findsOneWidget);
+
+    // The four bundled packs are no longer offered as a choice.
     for (final pack in AlarmSoundPack.values) {
-      await reveal(tester, find.text(pack.label), 250);
-      expect(find.text(pack.label), findsOneWidget);
-      expect(find.byTooltip('Preview ${pack.label}'), findsOneWidget);
+      expect(find.text(pack.label), findsNothing);
     }
+  });
+
+  testWidgets('the alarm tone page clears the Android navigation bar', (
+    tester,
+  ) async {
+    tester.view.viewPadding = const FakeViewPadding(bottom: 60);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AlarmEditor(engine: _PickerEngine())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await reveal(tester, find.widgetWithText(ListTile, 'Sound'), 250);
+    await tester.tap(find.widgetWithText(ListTile, 'Sound'));
+    await tester.pumpAndSettle();
+
+    final list = tester.widget<ListView>(find.byType(ListView));
+    // The page adds the system inset (scaled by DPR) on top of its own margin.
+    expect(list.padding!.resolve(TextDirection.ltr).bottom, greaterThan(32));
   });
 
   testWidgets('new QR alarms reuse the shared code across editor sessions', (
@@ -130,8 +301,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.widgetWithText(FilterChip, 'QR code'));
-      await tester.tap(find.widgetWithText(FilterChip, 'QR code'));
+      await reveal(tester, find.widgetWithText(ListTile, 'QR code'), 250);
+      await tester.ensureVisible(find.widgetWithText(ListTile, 'QR code'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'QR code'));
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
         find.widgetWithText(TextField, 'QR code value'),
@@ -162,17 +335,60 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // The list builds lazily, so scroll down to the QR field first.
+    await reveal(tester, find.widgetWithText(TextField, 'QR code value'), 250);
     final field = tester.widget<TextField>(
       find.widgetWithText(TextField, 'QR code value'),
     );
     expect(field.controller!.text, 'OLD-PRINTED-CODE');
     await reveal(tester, find.text('Use shared wake-up QR'), 250);
+    await tester.ensureVisible(find.text('Use shared wake-up QR'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Use shared wake-up QR'));
     await tester.pumpAndSettle();
     expect(field.controller!.text, 'SHARED-WAKE-UP');
   });
 
-  testWidgets('saving returns an alarm carrying the chosen sound pack', (
+  testWidgets('after uploading a sound you can switch back to a device tone', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AlarmEditor(engine: _PickerEngine())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = find.widgetWithText(ListTile, 'Sound');
+    await reveal(tester, row, 250);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    Radio<String> radio(String value) => tester.widget<Radio<String>>(
+      find.byWidgetPredicate((w) => w is Radio<String> && w.value == value),
+    );
+    String? chosen() => RadioGroup.maybeOf<String>(
+      tester.element(find.byType(Radio<String>).first),
+    )?.groupValue;
+
+    await tester.tap(find.text('Upload your own sound'));
+    await tester.pumpAndSettle();
+    expect(find.text('My song.mp3'), findsOneWidget);
+    expect(chosen(), '__upload__');
+
+    await tester.tap(find.text('Aurora'));
+    await tester.pumpAndSettle();
+    expect(chosen(), 'content://media/1');
+    expect(find.text('My song.mp3'), findsNothing);
+
+    await tester.tap(find.text('Upload your own sound'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Default alarm sound'));
+    await tester.pumpAndSettle();
+    expect(chosen(), '__default__');
+    expect(radio('__default__'), isNotNull);
+  });
+
+  testWidgets('saving returns an alarm carrying vibration and the sound', (
     tester,
   ) async {
     // The sheet exceeds the default 800x600 surface, so the save button is off-screen.
@@ -190,7 +406,7 @@ void main() {
                 saved = await showModalBottomSheet<Alarm>(
                   context: context,
                   isScrollControlled: true,
-                  builder: (_) => const AlarmEditor(),
+                  builder: (_) => AlarmEditor(engine: _PickerEngine()),
                 );
               },
               child: const Text('open'),
@@ -202,40 +418,56 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text(AlarmSoundPack.gong.label));
-    await tester.tap(find.text(AlarmSoundPack.gong.label));
+    final row = find.widgetWithText(ListTile, 'Sound');
+    await reveal(tester, row, 250);
+    await tester.tap(row);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save alarm'));
+    await tester.tap(find.text('Aurora'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Vibration'));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Aurora · Vibration off'), findsOneWidget);
+
+    await reveal(tester, find.text('Save alarm'), 250);
     await tester.tap(find.text('Save alarm'));
     await tester.pumpAndSettle();
 
     expect(saved, isNotNull);
-    expect(saved!.soundPack, AlarmSoundPack.gong);
+    expect(saved!.vibrate, isFalse);
+    expect(saved!.customSoundName, 'Aurora');
   });
-
   testWidgets(
-    'get-out-of-bed preset selects an object, no snooze and one check-in',
+    'get-out-of-bed preset selects an object and QR, no snooze, one check-in',
     (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: AlarmEditor())),
       );
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Get out of bed'));
+      await tester.tap(find.widgetWithText(ListTile, 'Get out of bed'));
       await tester.pumpAndSettle();
+      // Leaving the room is done by an object or a scan, so QR is checked too.
+      // The QR card sits above the wake-up object section, so find it first.
+      await reveal(
+        tester,
+        find.widgetWithText(TextField, 'QR code value'),
+        250,
+      );
+      expect(find.widgetWithText(TextField, 'QR code value'), findsOneWidget);
       await reveal(tester, find.text('Your wake-up object'), 250);
-      expect(find.widgetWithText(TextField, 'QR code value'), findsNothing);
-      await reveal(tester, find.widgetWithText(ChoiceChip, 'No snooze'), 250);
+      await reveal(tester, find.widgetWithText(ChoicePill, 'No snooze'), 250);
       expect(
         tester
-            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'No snooze'))
+            .widget<ChoicePill>(find.widgetWithText(ChoicePill, 'No snooze'))
             .selected,
         isTrue,
       );
       await reveal(tester, find.text('Stay Awake check-in'), 250);
-      await reveal(tester, find.widgetWithText(ChoiceChip, 'Off'), 150);
+      await reveal(tester, find.widgetWithText(ChoicePill, 'Off'), 150);
       // Only the check-in five-minute choice is selected.
       expect(
         tester
-            .widgetList<ChoiceChip>(find.widgetWithText(ChoiceChip, '5 min'))
+            .widgetList<ChoicePill>(find.widgetWithText(ChoicePill, '5 min'))
             .where((c) => c.selected)
             .length,
         1,
@@ -252,10 +484,12 @@ void main() {
         home: Scaffold(body: AlarmEditor(engine: engine)),
       ),
     );
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Simple'));
+    await tester.tap(find.widgetWithText(ListTile, 'Simple'));
     await tester.pumpAndSettle();
     final button = find.text('Practice this challenge — no alarm scheduled');
     await reveal(tester, button, 250);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(engine.practiced?.escapes, {EscapeKind.tap});
@@ -275,4 +509,29 @@ class _PracticeEngine extends EngineUnavailable {
   Future<void> schedule(Alarm alarm, DateTime triggerAt) async {
     scheduled++;
   }
+}
+
+class _PickerEngine extends EngineUnavailable implements CustomSoundEngine {
+  @override
+  bool get supportsCustomSounds => true;
+
+  @override
+  Future<List<PickedSound>> listSystemSounds() async => const [
+    PickedSound(id: 'content://media/1', name: 'Aurora'),
+    PickedSound(id: 'content://media/2', name: 'Nebula'),
+  ];
+
+  @override
+  Future<PickedSound> importSystemSound(String uri) async =>
+      PickedSound(id: uri, name: 'Aurora');
+
+  @override
+  Future<PickedSound?> pickCustomSound() async =>
+      const PickedSound(id: 'mine.mp3', name: 'My song.mp3');
+
+  @override
+  Future<void> previewCustomSound(String id, {bool vibrate = false}) async {}
+
+  @override
+  Future<void> stopAudibilitySample() async {}
 }

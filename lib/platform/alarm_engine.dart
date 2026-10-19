@@ -41,7 +41,10 @@ abstract class AlarmEngine {
 
   /// Plays the bundled alarm ladder on the alarm audio stream so the user can
   /// confirm audibility; [soundPack] previews one tone family.
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack});
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  });
 
   /// Stops a running [playAudibilitySample]; safe when nothing is playing.
   Future<void> stopAudibilitySample();
@@ -82,7 +85,39 @@ abstract interface class CheckInEngine {
   Future<bool> confirmCheckIn(PendingCheckIn checkIn);
 }
 
-class MethodChannelEngine implements AlarmEngine, CheckInEngine {
+/// An uploaded alarm tone the platform has copied into its own storage.
+class PickedSound {
+  const PickedSound({required this.id, required this.name});
+
+  /// Opaque reference stored on the alarm; the file itself never leaves the platform.
+  final String id;
+
+  /// The original file name, for display.
+  final String name;
+}
+
+/// Optional: choosing and previewing an uploaded alarm tone. Android only today.
+abstract interface class CustomSoundEngine {
+  bool get supportsCustomSounds;
+
+  /// The device's own alarm sounds (RingtoneManager TYPE_ALARM), for the picker.
+  Future<List<PickedSound>> listSystemSounds();
+
+  /// Copies a device sound into app storage so it rings reliably. Returns the
+  /// stored reference; throws [EngineException] when the sound is unusable.
+  Future<PickedSound> importSystemSound(String uri);
+
+  /// Opens the system file picker; null when the user cancels. Throws
+  /// [EngineException] when the file is unusable (too large, not audio).
+  Future<PickedSound?> pickCustomSound();
+
+  /// Plays the uploaded tone on the alarm stream; stop with
+  /// [AlarmEngine.stopAudibilitySample].
+  Future<void> previewCustomSound(String id, {bool vibrate = false});
+}
+
+class MethodChannelEngine
+    implements AlarmEngine, CheckInEngine, CustomSoundEngine {
   MethodChannelEngine({MethodChannel? channel})
     : _channel =
           channel ??
@@ -117,6 +152,62 @@ class MethodChannelEngine implements AlarmEngine, CheckInEngine {
   }
 
   @override
+  bool get supportsCustomSounds =>
+      defaultTargetPlatform == TargetPlatform.android;
+
+  @override
+  Future<List<PickedSound>> listSystemSounds() async {
+    if (!supportsCustomSounds) return const [];
+    final raw = await _invoke<List<Object?>>('listSystemSounds') ?? const [];
+    return raw
+        .cast<Map<Object?, Object?>>()
+        .map((item) {
+          return PickedSound(
+            id: item['id'] as String? ?? '',
+            name: item['name'] as String? ?? 'Sound',
+          );
+        })
+        .where((sound) => sound.id.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<PickedSound> importSystemSound(String uri) async {
+    if (!supportsCustomSounds) {
+      throw EngineException(
+        'UNSUPPORTED',
+        'Custom sounds are available on Android only.',
+      );
+    }
+    final raw = await _invoke<Map<Object?, Object?>>('importSystemSound', {
+      'uri': uri,
+    });
+    final id = raw?['id'] as String?;
+    if (id == null || id.isEmpty) {
+      throw EngineException('CUSTOM_SOUND', 'Could not use that sound.');
+    }
+    return PickedSound(id: id, name: raw?['name'] as String? ?? 'Sound');
+  }
+
+  @override
+  Future<PickedSound?> pickCustomSound() async {
+    if (!supportsCustomSounds) {
+      throw EngineException(
+        'UNSUPPORTED',
+        'Custom sounds are available on Android only.',
+      );
+    }
+    final raw = await _invoke<Map<Object?, Object?>>('pickCustomSound');
+    final id = raw?['id'] as String?;
+    if (id == null || id.isEmpty) return null;
+    return PickedSound(id: id, name: raw?['name'] as String? ?? 'Custom sound');
+  }
+
+  @override
+  Future<void> previewCustomSound(String id, {bool vibrate = false}) =>
+      _invoke<void>('previewCustomSound', {'id': id, 'vibrate': vibrate});
+
+  @override
   Future<void> practice(Alarm alarm) =>
       _invoke<void>('practice', alarm.toJson());
 
@@ -126,13 +217,14 @@ class MethodChannelEngine implements AlarmEngine, CheckInEngine {
   /// Translates native errors once, preserving the code for the health UI.
   Future<T?> _invoke<T>(String method, [Object? arguments]) async {
     try {
-      return await _channel
-          .invokeMethod<T>(method, arguments)
-          .timeout(
-            Duration(
-              seconds: method == 'schedule' || method == 'cancel' ? 30 : 10,
-            ),
-          );
+      return await _channel.invokeMethod<T>(method, arguments).timeout(
+        switch (method) {
+          'schedule' || 'cancel' => const Duration(seconds: 30),
+          // A person is choosing a file in the system picker.
+          'pickCustomSound' => const Duration(minutes: 10),
+          _ => const Duration(seconds: 10),
+        },
+      );
     } on TimeoutException {
       throw EngineException(
         'TIMEOUT',
@@ -238,10 +330,13 @@ class MethodChannelEngine implements AlarmEngine, CheckInEngine {
       await _invoke<bool>('requestPermissions') ?? false;
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) =>
-      _invoke<void>('playAudibilitySample', {
-        if (soundPack != null) 'soundPack': soundPack.name,
-      });
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  }) => _invoke<void>('playAudibilitySample', {
+    if (soundPack != null) 'soundPack': soundPack.name,
+    'vibrate': vibrate,
+  });
 
   @override
   Future<void> stopAudibilitySample() => _invoke<void>('stopAudibilitySample');
@@ -308,8 +403,10 @@ class EngineUnavailable implements AlarmEngine {
   Future<bool> requestPermissions() async => false;
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async =>
-      _unavailable();
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  }) async => _unavailable();
 
   @override
   Future<void> stopAudibilitySample() async {}

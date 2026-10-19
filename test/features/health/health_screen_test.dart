@@ -48,7 +48,10 @@ class _HealthEngine extends EngineUnavailable {
   }
 
   @override
-  Future<void> playAudibilitySample({AlarmSoundPack? soundPack}) async {
+  Future<void> playAudibilitySample({
+    AlarmSoundPack? soundPack,
+    bool vibrate = false,
+  }) async {
     plays++;
   }
 

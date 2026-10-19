@@ -74,6 +74,9 @@ class Alarm {
     this.objectVerified = false,
     this.needsSetup = false,
     this.skipUntilMillis = 0,
+    this.customSoundId = '',
+    this.customSoundName = '',
+    this.vibrate = true,
     this.scheduledAtMillis,
     this.createdAt,
   });
@@ -108,7 +111,20 @@ class Alarm {
 
   final ChallengeDifficulty difficulty;
 
+  /// The bundled tone, which also rings if [customSoundId] cannot be played.
   final AlarmSoundPack soundPack;
+
+  /// Android-only uploaded tone: an opaque id for a file the app keeps in its own
+  /// storage. Empty means the bundled [soundPack] rings.
+  final String customSoundId;
+
+  /// The uploaded file's display name, shown in the editor.
+  final String customSoundName;
+
+  bool get hasCustomSound => customSoundId.isNotEmpty;
+
+  /// Whether the phone vibrates while this alarm rings, alongside the tone.
+  final bool vibrate;
 
   /// Snooze window in minutes; 0 means this alarm cannot be snoozed.
   final int snoozeMinutes;
@@ -180,6 +196,9 @@ class Alarm {
     bool? objectVerified,
     bool? needsSetup,
     int? skipUntilMillis,
+    String? customSoundId,
+    String? customSoundName,
+    bool? vibrate,
   }) => Alarm(
     id: id ?? this.id,
     hour: hour ?? this.hour,
@@ -198,6 +217,9 @@ class Alarm {
     objectVerified: objectVerified ?? this.objectVerified,
     needsSetup: needsSetup ?? this.needsSetup,
     skipUntilMillis: skipUntilMillis ?? this.skipUntilMillis,
+    customSoundId: customSoundId ?? this.customSoundId,
+    customSoundName: customSoundName ?? this.customSoundName,
+    vibrate: vibrate ?? this.vibrate,
     createdAt: createdAt,
   );
 
@@ -219,6 +241,9 @@ class Alarm {
     'objectVerified': objectVerified,
     'needsSetup': needsSetup,
     'skipUntilMillis': skipUntilMillis,
+    'customSoundId': customSoundId,
+    'customSoundName': customSoundName,
+    'vibrate': vibrate,
     'createdAt': createdAt?.millisecondsSinceEpoch,
   };
 
@@ -272,6 +297,9 @@ class Alarm {
       objectVerified: validObjectTarget && json['objectVerified'] == true,
       needsSetup: requiresSetup,
       skipUntilMillis: (json['skipUntilMillis'] as num?)?.toInt() ?? 0,
+      customSoundId: json['customSoundId'] as String? ?? '',
+      customSoundName: json['customSoundName'] as String? ?? '',
+      vibrate: json['vibrate'] as bool? ?? true,
       scheduledAtMillis: (json['nextTriggerAt'] as num?)?.toInt(),
       createdAt: json['createdAt'] == null
           ? null

@@ -49,12 +49,22 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             return
         }
-        val alarm = AlarmStore.get(context, id) ?: return
+        val alarm = AlarmStore.get(context, id) ?: run {
+            android.util.Log.w(TAG, "Trigger for unknown alarm $id ignored")
+            return
+        }
         val expected = intent.getLongExtra(NativeAlarmScheduler.EXTRA_TRIGGER_AT, 0L)
-        if (!AlarmPolicy.acceptsPrimary(alarm.enabled, alarm.nextTriggerAt, expected, now)) return
-        if (AlarmSessions.get(context, id)?.scheduledAt == expected) return
+        if (!AlarmPolicy.acceptsPrimary(alarm.enabled, alarm.nextTriggerAt, expected, now)) {
+            android.util.Log.w(TAG, "Trigger for $id rejected: enabled=${alarm.enabled} saved=${alarm.nextTriggerAt} incoming=$expected now=$now")
+            return
+        }
+        if (AlarmSessions.get(context, id)?.scheduledAt == expected) {
+            android.util.Log.w(TAG, "Trigger for $id at $expected ignored: occurrence already handled")
+            return
+        }
         // More than a ring window late is a missed occurrence, not a surprise alarm.
         val session = AlarmSessions.begin(context, alarm, expected, recordStart = now - expected < AlarmDefaults.MAX_RINGING_MS)
+        android.util.Log.i(TAG, "Trigger for $id accepted: session phase=${session.phase}, ${now - expected} ms after schedule")
         runCatching { NativeAlarmScheduler.armNextTrigger(context, alarm) }
             .onFailure {
                 AlarmStore.put(context, alarm.copy(enabled = false, nextTriggerAt = 0L))
@@ -68,6 +78,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        private const val TAG = "WakeGuard"
         const val MAX_WATCHDOG_RUNGS = 4
         const val PRIMARY_TRIGGER = -1
     }

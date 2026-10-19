@@ -239,6 +239,14 @@ class RingingService : Service() {
     private var label: String = "Wake up"
     private var soundPack: String = AlarmSounds.DEFAULT_PACK
 
+    /** Whether this alarm vibrates while it rings, read from the session's stored record. */
+    private var vibrateEnabled = true
+    private var vibrator: android.os.Vibrator? = null
+
+    /** The alarm's uploaded tone, and whether it already failed this ring (then the bundled pack plays). */
+    private var customSoundId: String = ""
+    private var customFailed = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -282,11 +290,14 @@ class RingingService : Service() {
             ?: AlarmSounds.DEFAULT_PACK
 
         val alarm = session.alarm
+        customSoundId = alarm.customSound
+        vibrateEnabled = alarm.vibrate
         val newSession = RingingState.sessionId != session.token
         if (newSession) {
             playbackHandler.removeCallbacksAndMessages(null)
             playbackRetryPending = false
             playbackRetries = 0
+            customFailed = false
             playingPack = null
             releasePlayer()
         }
@@ -305,6 +316,7 @@ class RingingService : Service() {
         volumeHandler.removeCallbacks(volumeGuard)
         volumeHandler.post(volumeGuard)
         startPlayback()
+        startVibration()
         scheduleEscalation(elapsed)
         if (newSession) AlarmChallengeLauncher.openIfVisible(this, session)
 
@@ -337,11 +349,13 @@ class RingingService : Service() {
      */
     private fun startPlayback() {
         if (!canPlay() || playbackRetryPending) return
-        if (playingPack == soundPack && player != null && (preparing || runCatching { player?.isPlaying == true }.getOrDefault(false))) return
+        // The uploaded file wins while it exists and has not failed this ring.
+        val custom = if (customFailed) null else CustomSounds.fileFor(this, customSoundId)
+        val playbackKey = custom?.let { "custom:${it.name}" } ?: soundPack
+        if (playingPack == playbackKey && player != null && (preparing || runCatching { player?.isPlaying == true }.getOrDefault(false))) return
         releasePlayer()
-        playingPack = soundPack
+        playingPack = playbackKey
         runCatching {
-            val resId = AlarmSounds.resourceFor(this, soundPack)
             val candidate = MediaPlayer()
             player = candidate
             preparing = true
@@ -352,10 +366,15 @@ class RingingService : Service() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build(),
                 )
-                setDataSource(
-                    this@RingingService,
-                    android.net.Uri.parse("android.resource://$packageName/$resId"),
-                )
+                if (custom != null) {
+                    setDataSource(custom.absolutePath)
+                } else {
+                    val resId = AlarmSounds.resourceFor(this@RingingService, soundPack)
+                    setDataSource(
+                        this@RingingService,
+                        android.net.Uri.parse("android.resource://$packageName/$resId"),
+                    )
+                }
                 isLooping = true
                 setOnPreparedListener { ready ->
                     if (player !== ready) return@setOnPreparedListener
@@ -385,6 +404,34 @@ class RingingService : Service() {
         }
     }
 
+    /**
+     * Vibrates in a repeating pulse while the alarm rings, so a phone face-down or in a pocket still
+     * wakes the sleeper even if the tone is hard to hear. Honors the per-alarm [vibrateEnabled] flag.
+     */
+    private fun startVibration() {
+        if (!vibrateEnabled) return
+        val manager = getSystemService(android.os.Vibrator::class.java) ?: return
+        vibrator = manager
+        val pattern = longArrayOf(0, 500, 300, 500)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                manager.vibrate(
+                    android.os.VibrationEffect.createWaveform(pattern, 0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                manager.vibrate(pattern, 0)
+            }
+        }.onFailure {
+            android.util.Log.w("WakeGuard", "Could not start alarm vibration", it)
+        }
+    }
+
+    private fun stopVibration() {
+        runCatching { vibrator?.cancel() }
+        vibrator = null
+    }
+
     private fun canPlay(): Boolean {
         if (destroyed) return false
         val live = alarmId?.let { AlarmSessions.get(this, it) } ?: return false
@@ -393,11 +440,19 @@ class RingingService : Service() {
     }
 
     private fun playbackFailed(error: Throwable? = null) {
+        val usingCustom = !customFailed && CustomSounds.fileFor(this, customSoundId) != null
         android.util.Log.e("WakeGuard", "Alarm audio failed; attempting bounded recovery", error)
         playbackHandler.removeCallbacksAndMessages(null)
         releasePlayer()
         playingPack = null
         playbackRetryPending = false
+        if (usingCustom) {
+            // A bad upload must never mean a silent alarm: switch to the bundled tone right away.
+            customFailed = true
+            android.util.Log.w("WakeGuard", "Custom alarm sound failed; using the bundled tone")
+            startPlayback()
+            return
+        }
         if (!canPlay() || playbackRetries >= PLAYBACK_RETRY_DELAYS_MS.size) return
         val delay = PLAYBACK_RETRY_DELAYS_MS[playbackRetries++]
         playbackRetryPending = true
@@ -536,6 +591,7 @@ class RingingService : Service() {
         handler.removeCallbacksAndMessages(null)
         volumeHandler.removeCallbacks(volumeGuard)
         restoreStreamVolume()
+        stopVibration()
         releasePlayer()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null

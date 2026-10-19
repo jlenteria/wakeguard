@@ -8,11 +8,11 @@ class PrivacyPolicyScreen extends StatelessWidget {
   static const sections = <(String, String)>[
     (
       'About this policy',
-      'WakeGuard for Android (com.bling.wakeguard) is developed by Bling Bling. Updated October 13, 2026. Privacy contact: jlenteria98@gmail.com.',
+      'WakeGuard for Android (com.bling.wakeguard) is developed by Bling Bling. Updated October 20, 2026. Privacy contact: jlenteria98@gmail.com.',
     ),
     (
       'Alarms and local data',
-      'Alarm times, labels, challenge choices, QR secrets, object-practice verification, settings, ringing sessions and recent wake-up history are stored in the app’s private storage on your device. WakeGuard has no accounts, ads, developer-operated server or custom analytics service. Android backup and device transfer are disabled for this data.',
+      'Alarm times, labels, challenge choices, QR code values, object-practice results, settings, ringing sessions and recent wake-up history are stored in the app’s private storage on your phone. WakeGuard has no accounts, ads, developer-run server or custom analytics service. Android backup and device transfer are disabled for this data.',
     ),
     (
       'Camera and recognition',
@@ -20,7 +20,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
     ),
     (
       'Third-party SDK diagnostics',
-      'The Android app uses Google ML Kit for on-device face detection, QR scanning and image labeling. Google documents collection of device and app information, per-installation identifiers, performance metrics, API configuration, feature/event information and error codes for diagnostics and usage analytics. These SDK diagnostics may be sent to Google over HTTPS when connectivity is available. Alarm contents and camera frames are not sent by WakeGuard. See developers.google.com/ml-kit/android-data-disclosure and policies.google.com/privacy. This SDK processing is distinct from the app’s local alarm records.',
+      'The Android app uses Google ML Kit for on-device face detection, QR scanning and image labelling. Google documents collection of device and app information, per-installation identifiers, performance metrics, API configuration, feature/event information and error codes for diagnostics and usage analytics. These SDK diagnostics may be sent to Google over HTTPS when connectivity is available. Alarm contents and camera frames are not sent by WakeGuard. See developers.google.com/ml-kit/android-data-disclosure and policies.google.com/privacy. This SDK processing is distinct from the app’s local alarm records.',
     ),
     (
       'Sharing, printing and support',

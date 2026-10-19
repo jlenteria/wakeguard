@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/alarm.dart';
 import '../../shared/toast.dart';
 import 'alarms_screen_view_model.dart';
+import 'analog_clock.dart';
 
 /// The home tab: readiness, the next armed trigger, and every saved alarm.
 class AlarmsScreen extends StatelessWidget {
@@ -46,6 +47,7 @@ class AlarmsScreen extends StatelessWidget {
                               onDismiss: viewModel.clearError,
                             ),
                           ),
+                        const SliverToBoxAdapter(child: AnalogClock()),
                         SliverToBoxAdapter(
                           child: _ReadinessCard(
                             viewModel: viewModel,
@@ -70,6 +72,7 @@ class AlarmsScreen extends StatelessWidget {
                                   message: viewModel.lastError!,
                                   onDismiss: viewModel.clearError,
                                 ),
+                              const AnalogClock(),
                               _ReadinessCard(
                                 viewModel: viewModel,
                                 onOpenHealth: onOpenHealth,
@@ -77,7 +80,7 @@ class AlarmsScreen extends StatelessWidget {
                               if (dropped.isNotEmpty)
                                 _SlotWarning(count: dropped.length),
                               if (soonest != null)
-                                _NextAlarmBanner(
+                                _NextAlarmCaption(
                                   triggerAt: soonest,
                                   alarm: viewModel.nextAlarm,
                                 ),
@@ -189,46 +192,41 @@ class _ReadinessCard extends StatelessWidget {
   }
 }
 
-class _NextAlarmBanner extends StatelessWidget {
-  const _NextAlarmBanner({required this.triggerAt, this.alarm});
+/// The next ring in one calm line under the clock, instead of a card that
+/// repeated what the first alarm row already shows.
+class _NextAlarmCaption extends StatelessWidget {
+  const _NextAlarmCaption({required this.triggerAt, this.alarm});
 
   final DateTime triggerAt;
   final Alarm? alarm;
 
   @override
   Widget build(BuildContext context) {
-    final delta = triggerAt.difference(DateTime.now());
-    final label = delta.isNegative || delta.inMinutes < 1
-        ? 'rings now'
-        : delta.inHours >= 24
-        ? 'rings in ${delta.inDays}d ${delta.inHours % 24}h'
-        : 'rings in ${delta.inHours}h ${delta.inMinutes % 60}m';
+    final theme = Theme.of(context);
     final localizations = MaterialLocalizations.of(context);
-    return SizedBox(
-      width: double.infinity,
-      child: Card(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Next alarm', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              Text(
-                TimeOfDay.fromDateTime(triggerAt).format(context),
-                style: Theme.of(context).textTheme.headlineLarge,
-              ),
-              Text(
-                '${alarm?.label.isNotEmpty == true ? alarm!.label : 'Alarm'} · '
-                '${localizations.formatFullDate(triggerAt)}',
-              ),
-              const SizedBox(height: 8),
-              Text(label, style: Theme.of(context).textTheme.bodyMedium),
-            ],
+    final label = alarm?.label.isNotEmpty == true ? alarm!.label : 'Alarm';
+    return Padding(
+      key: const ValueKey('next-alarm-caption'),
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+      child: Column(
+        children: [
+          _RingsIn(
+            when: triggerAt,
+            prefix: 'Rings ',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
+          const SizedBox(height: 4),
+          Text(
+            '${TimeOfDay.fromDateTime(triggerAt).format(context)} · $label · '
+            '${localizations.formatMediumDate(triggerAt)}',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -313,145 +311,167 @@ class _AlarmTile extends StatelessWidget {
     final timeLabel = time.format(context);
     final messenger = ScaffoldMessenger.of(context);
     final scheme = Theme.of(context).colorScheme;
-    return Dismissible(
-      key: ValueKey(alarm.id),
-      direction: busy ? DismissDirection.none : DismissDirection.endToStart,
-      confirmDismiss: (_) async {
-        final deleted = await onDelete();
-        if (!deleted) return false;
-        // Captured before the await: the tile unmounts, so a later lookup would throw.
-        messenger.clearSnackBars();
-        showToastTo(
-          messenger,
-          scheme,
-          kind: ToastKind.success,
-          message: 'Deleted the $timeLabel alarm',
-          duration: const Duration(seconds: 10),
-          actionLabel: 'Undo',
-          onAction: () => unawaited(
-            onRestore().catchError((Object error) {
-              showToastTo(
-                messenger,
-                scheme,
-                kind: ToastKind.error,
-                message: 'Could not restore alarm',
-                detail: '$error',
-              );
-            }),
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    const radius = BorderRadius.all(Radius.circular(24));
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      child: Dismissible(
+        key: ValueKey(alarm.id),
+        direction: busy ? DismissDirection.none : DismissDirection.endToStart,
+        confirmDismiss: (_) async {
+          final deleted = await onDelete();
+          if (!deleted) return false;
+          // Captured before the await: the tile unmounts, so a later lookup would throw.
+          messenger.clearSnackBars();
+          showToastTo(
+            messenger,
+            scheme,
+            kind: ToastKind.success,
+            message: 'Deleted the $timeLabel alarm',
+            duration: const Duration(seconds: 10),
+            actionLabel: 'Undo',
+            onAction: () => unawaited(
+              onRestore().catchError((Object error) {
+                showToastTo(
+                  messenger,
+                  scheme,
+                  kind: ToastKind.error,
+                  message: 'Could not restore alarm',
+                  detail: '$error',
+                );
+              }),
+            ),
+          );
+          return true;
+        },
+        background: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.error,
+            borderRadius: radius,
           ),
-        );
-        return true;
-      },
-      background: Container(
-        color: Theme.of(context).colorScheme.error,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        child: const Icon(Icons.delete_outline),
-      ),
-      // Plain ListTile: SwitchListTile wires row taps to the switch, blocking edits.
-      child: Opacity(
-        opacity: alarm.enabled ? 1 : 0.55,
-        child: ListTile(
-          onTap: busy ? null : () => onOpen(alarm),
-          title: Text(
-            time.format(context),
-            style: const TextStyle(fontSize: 32),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${alarm.label.isEmpty ? 'Alarm' : alarm.label} · ${_repeatSummary(alarm)}',
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 24),
+          child: const Icon(Icons.delete_outline),
+        ),
+        // A rounded card with a soft shadow, like the phone's Clock app.
+        child: Opacity(
+          opacity: alarm.enabled ? 1 : 0.55,
+          // White on the white page in light mode, lifted by the shadow alone;
+          // dark mode keeps the app's raised card colour.
+          child: Card(
+            margin: EdgeInsets.zero,
+            color: isLight ? Colors.white : null,
+            elevation: 3,
+            shadowColor: Colors.black.withValues(alpha: 0.25),
+            shape: const RoundedRectangleBorder(borderRadius: radius),
+            clipBehavior: Clip.antiAlias,
+            // Plain ListTile: SwitchListTile wires row taps to the switch, blocking edits.
+            child: ListTile(
+              contentPadding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+              onTap: busy ? null : () => onOpen(alarm),
+              title: Text(
+                time.format(context),
+                style: const TextStyle(fontSize: 32),
               ),
-              Text(
-                alarm.needsSetup
-                    ? 'Setup required · open to choose and practice the new challenge'
-                    : !alarm.enabled
-                    ? 'Off'
-                    : plannedAt != null
-                    ? 'Rings ${_relative(plannedAt!)}'
-                    : 'Not scheduled',
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${alarm.difficulty.label} · ${_escapeSummary(alarm)}'
-                '${alarm.snoozeMinutes == 0 ? ' · no snooze' : ''}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (alarm.checkInMinutes > 0)
-                Text(
-                  'Stay Awake · ${alarm.checkInMinutes} min',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              if (alarm.skipUntilMillis > DateTime.now().millisecondsSinceEpoch)
-                Text(
-                  'Next alarm skipped',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (busy)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              Switch(
-                value: alarm.enabled,
-                onChanged: busy || alarm.needsSetup
-                    ? null
-                    : (value) => onToggle(value),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Alarm actions',
-                enabled: !busy,
-                onSelected: (action) async {
-                  try {
-                    if (action == 'duplicate') await onDuplicate();
-                    if (action == 'skip') await onSkip();
-                    if (!context.mounted) return;
-                    showAppToast(
-                      context,
-                      kind: ToastKind.success,
-                      message: action == 'duplicate'
-                          ? 'Alarm duplicated, switched off.'
-                          : 'Schedule updated.',
-                      detail: action == 'duplicate'
-                          ? 'Edit it to choose a time.'
-                          : null,
-                    );
-                  } catch (error) {
-                    if (context.mounted) {
-                      showAppToast(
-                        context,
-                        kind: ToastKind.error,
-                        message: 'Could not update alarm',
-                        detail: '$error',
-                      );
-                    }
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'duplicate',
-                    child: Text('Duplicate'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${alarm.label.isEmpty ? 'Alarm' : alarm.label} · ${_repeatSummary(alarm)}',
                   ),
-                  if (alarm.enabled && alarm.isRepeating)
-                    PopupMenuItem(
-                      value: 'skip',
-                      child: Text(
-                        alarm.skipUntilMillis >
-                                DateTime.now().millisecondsSinceEpoch
-                            ? 'Undo skip'
-                            : 'Skip next alarm',
-                      ),
+                  if (alarm.enabled && !alarm.needsSetup && plannedAt != null)
+                    _RingsIn(when: plannedAt!, prefix: 'Rings ')
+                  else
+                    Text(
+                      alarm.needsSetup
+                          ? 'Setup required · open to choose and practice the new challenge'
+                          : !alarm.enabled
+                          ? 'Off'
+                          : 'Not scheduled',
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${alarm.difficulty.label} · ${_escapeSummary(alarm)}'
+                    '${alarm.snoozeMinutes == 0 ? ' · no snooze' : ''}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (alarm.checkInMinutes > 0)
+                    Text(
+                      'Stay Awake · ${alarm.checkInMinutes} min',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  if (alarm.skipUntilMillis >
+                      DateTime.now().millisecondsSinceEpoch)
+                    Text(
+                      'Next alarm skipped',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                 ],
               ),
-            ],
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (busy)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  Switch(
+                    value: alarm.enabled,
+                    onChanged: busy || alarm.needsSetup
+                        ? null
+                        : (value) => onToggle(value),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Alarm actions',
+                    enabled: !busy,
+                    onSelected: (action) async {
+                      try {
+                        if (action == 'duplicate') await onDuplicate();
+                        if (action == 'skip') await onSkip();
+                        if (!context.mounted) return;
+                        showAppToast(
+                          context,
+                          kind: ToastKind.success,
+                          message: action == 'duplicate'
+                              ? 'Alarm duplicated, switched off.'
+                              : 'Schedule updated.',
+                          detail: action == 'duplicate'
+                              ? 'Edit it to choose a time.'
+                              : null,
+                        );
+                      } catch (error) {
+                        if (context.mounted) {
+                          showAppToast(
+                            context,
+                            kind: ToastKind.error,
+                            message: 'Could not update alarm',
+                            detail: '$error',
+                          );
+                        }
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'duplicate',
+                        child: Text('Duplicate'),
+                      ),
+                      if (alarm.enabled && alarm.isRepeating)
+                        PopupMenuItem(
+                          value: 'skip',
+                          child: Text(
+                            alarm.skipUntilMillis >
+                                    DateTime.now().millisecondsSinceEpoch
+                                ? 'Undo skip'
+                                : 'Skip next alarm',
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -472,16 +492,65 @@ class _AlarmTile extends StatelessWidget {
     final ordered = alarm.weekdays.toList()..sort();
     return ordered.map((day) => names[day - 1]).join(', ');
   }
+}
 
-  static String _relative(DateTime when) {
-    final delta = when.difference(DateTime.now());
-    if (delta.isNegative || delta.inMinutes < 1) return 'now';
-    if (delta.inMinutes < 60) return 'in ${delta.inMinutes}m';
-    if (delta.inHours < 24) {
-      return 'in ${delta.inHours}h ${delta.inMinutes % 60}m';
-    }
-    return 'in ${delta.inDays}d';
+/// Time until [when], counted in clock minutes so it agrees with the status bar:
+/// at 4:04:30 an alarm for 4:05 is "in 1m", and "now" only once 4:05 arrives.
+@visibleForTesting
+String ringsIn(DateTime when, DateTime now) {
+  DateTime minuteOf(DateTime t) =>
+      DateTime(t.year, t.month, t.day, t.hour, t.minute);
+  final minutes = minuteOf(when).difference(minuteOf(now)).inMinutes;
+  if (minutes <= 0) return 'now';
+  if (minutes < 60) return 'in ${minutes}m';
+  final hours = minutes ~/ 60;
+  if (hours < 24) return 'in ${hours}h ${minutes % 60}m';
+  return 'in ${hours ~/ 24}d ${hours % 24}h';
+}
+
+/// "Rings in 5m" text that re-evaluates each time the clock minute changes.
+class _RingsIn extends StatefulWidget {
+  const _RingsIn({required this.when, required this.prefix, this.style});
+
+  final DateTime when;
+  final String prefix;
+  final TextStyle? style;
+
+  @override
+  State<_RingsIn> createState() => _RingsInState();
+}
+
+class _RingsInState extends State<_RingsIn> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleTick();
   }
+
+  void _scheduleTick() {
+    final now = DateTime.now();
+    // Land just after the next minute boundary so the text flips with the clock.
+    final intoMinute = now.second * 1000 + now.millisecond;
+    _timer = Timer(Duration(milliseconds: 60000 - intoMinute + 50), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleTick();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(
+    '${widget.prefix}${ringsIn(widget.when, DateTime.now())}',
+    style: widget.style,
+  );
 }
 
 class _EmptyState extends StatelessWidget {

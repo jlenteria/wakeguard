@@ -166,6 +166,7 @@ object NativeAlarmScheduler {
         )
 
     fun rescheduleAll(context: Context, catchUp: Boolean = true) {
+        AlarmSessions.expireStale(context)
         for (alarm in AlarmStore.all(context)) {
             if (!alarm.enabled) continue
             runCatching {

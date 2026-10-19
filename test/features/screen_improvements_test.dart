@@ -113,6 +113,9 @@ void main() {
       expect(find.textContaining('No alarms enabled.'), findsOneWidget);
       final gate = Completer<void>();
       engine.scheduleGate = gate;
+      // The clock above the list pushes the row down; bring it into view.
+      await tester.ensureVisible(find.byType(Switch));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(Switch));
       await tester.pump();
       expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
@@ -120,7 +123,7 @@ void main() {
       gate.complete();
       await tester.pumpAndSettle();
       expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNotNull);
-      expect(find.text('Next alarm'), findsOneWidget);
+      expect(find.byKey(const ValueKey('next-alarm-caption')), findsOneWidget);
     },
   );
 
@@ -139,6 +142,8 @@ void main() {
       ],
     );
     await showAlarms(tester);
+    await tester.scrollUntilVisible(find.byType(Dismissible), 200);
+    await tester.pumpAndSettle();
     await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
     await tester.pumpAndSettle();
     expect(controller.alarms, isEmpty);
@@ -150,7 +155,7 @@ void main() {
     expect(engine.store.single.id, 'undo');
   });
 
-  testWidgets('next alarm card identifies the soonest alarm and full date', (
+  testWidgets('next alarm caption identifies the soonest alarm and its date', (
     tester,
   ) async {
     await initialize(
@@ -169,11 +174,39 @@ void main() {
     final context = tester.element(find.byType(AlarmsScreen));
     expect(
       find.text(
-        'Work · ${MaterialLocalizations.of(context).formatFullDate(at)}',
+        '${TimeOfDay.fromDateTime(at).format(context)} · Work · '
+        '${MaterialLocalizations.of(context).formatMediumDate(at)}',
       ),
       findsOneWidget,
     );
-    expect(find.text('Next alarm'), findsOneWidget);
+    expect(find.byKey(const ValueKey('next-alarm-caption')), findsOneWidget);
+  });
+
+  testWidgets('alarm rows are white with a shadow in light mode', (
+    tester,
+  ) async {
+    await initialize(
+      alarms: [
+        Alarm(
+          id: 'row',
+          hour: 7,
+          minute: 0,
+          label: 'Morning',
+          escapes: const {EscapeKind.tap},
+        ),
+      ],
+    );
+    await showAlarms(tester);
+    await tester.scrollUntilVisible(find.byType(Dismissible), 200);
+    await tester.pumpAndSettle();
+    final card = tester.widget<Card>(
+      find.descendant(
+        of: find.byType(Dismissible),
+        matching: find.byType(Card),
+      ),
+    );
+    expect(card.color, Colors.white);
+    expect(card.elevation, greaterThan(0));
   });
 
   testWidgets(

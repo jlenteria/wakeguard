@@ -26,6 +26,8 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _Section(
             title: 'Appearance',
+            subtitle:
+                'Match your phone, or keep WakeGuard always light or dark.',
             child: SegmentedButton<ThemeModeSetting>(
               segments: [
                 for (final mode in ThemeModeSetting.values)
@@ -39,8 +41,8 @@ class SettingsScreen extends StatelessWidget {
           _Section(
             title: 'Alarm defaults',
             subtitle:
-                'Choose the snooze time for new alarms. You can change it '
-                'or turn snooze off for each alarm.',
+                'Snooze length for new alarms. You can change it or turn '
+                'snooze off for each alarm.',
             child: Wrap(
               spacing: 8,
               children: [
@@ -59,8 +61,8 @@ class SettingsScreen extends StatelessWidget {
           _Section(
             title: 'Wake-up QR',
             subtitle:
-                'Print once and place it away from bed. New QR alarms reuse '
-                'this code. Existing custom codes stay unchanged.',
+                'Print once and place it away from bed. New QR alarms use '
+                'this code; codes you already set stay as they are.',
             child: FilledButton.tonalIcon(
               icon: viewModel.loadingQr
                   ? const SizedBox(
@@ -111,12 +113,12 @@ class SettingsScreen extends StatelessWidget {
                 Text('Version ${viewModel.version}', style: text.bodySmall),
                 const SizedBox(height: 12),
                 Text(
-                  'Start your morning with purpose. WakeGuard combines offline '
-                  'alarms, wake-up challenges and optional Stay Awake check-ins.\n\n'
-                  'Free. No ads or accounts. Your alarms and history '
-                  'stay on your device. Camera challenges run on-device; '
-                  'images are never saved or uploaded by WakeGuard. '
-                  'The Privacy policy explains what app tools may send for troubleshooting.',
+                  'Offline alarms, wake-up challenges and optional Stay Awake '
+                  'check-ins that help you start the day on purpose.\n\n'
+                  'Free, with no ads or accounts. Your alarms and history stay '
+                  'on your phone. Camera challenges run on-device; images are '
+                  'never saved or uploaded by WakeGuard. The Privacy policy '
+                  'explains what app tools may send for troubleshooting.',
                   style: text.bodySmall,
                 ),
               ],
@@ -136,9 +138,7 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.favorite_border),
             title: const Text('Support WakeGuard'),
-            subtitle: const Text(
-              'Optional support for independent development',
-            ),
+            subtitle: const Text('Optional tip for independent development'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SupportScreen()),

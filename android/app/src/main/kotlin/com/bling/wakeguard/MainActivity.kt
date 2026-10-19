@@ -3,6 +3,7 @@ package com.bling.wakeguard
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
@@ -16,8 +17,38 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var channelAlive = true
 
+    /** The in-flight "pickCustomSound" call, answered from [onActivityResult]. */
+    private var pendingSoundPick: MethodChannel.Result? = null
+
     private companion object {
         const val CHANNEL = "com.bling.wakeguard/alarm"
+        const val REQUEST_PICK_SOUND = 4322
+
+        /** Re-arming is once per process: later activities in the same process find it already done. */
+        @Volatile var rearmed = false
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Queue the repair before Flutter starts so the first "alarms" read already sees it.
+        rearmLostAlarms()
+        super.onCreate(savedInstanceState)
+    }
+
+    /**
+     * AlarmManager forgets a package's alarms when the OS or an OEM task cleaner force-stops it, and
+     * only boot/package-replace broadcasts re-arm them. Without this, an alarm lost that way keeps a
+     * past trigger ("rings now") and never fires again until the phone reboots.
+     */
+    private fun rearmLostAlarms() {
+        if (rearmed) return
+        rearmed = true
+        val app = applicationContext
+        runCatching {
+            readQueue.execute {
+                runCatching { NativeAlarmScheduler.rescheduleAll(app) }
+                    .onFailure { android.util.Log.e("WakeGuard", "Could not re-arm alarms at startup", it) }
+            }
+        }.onFailure { rearmed = false }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -27,9 +58,13 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
+                if (call.method == "pickCustomSound") {
+                    pickCustomSound(result)
+                    return@setMethodCallHandler
+                }
                 // Preferences and system-service reads must not block Flutter's
                 // platform thread during startup or a sheet transition.
-                if (call.method in setOf("alarms", "health", "history", "capabilities", "objectTargetVerified", "pendingCheckIns")) {
+                if (call.method in setOf("alarms", "health", "history", "capabilities", "objectTargetVerified", "pendingCheckIns", "listSystemSounds", "importSystemSound")) {
                     runCatching { readQueue.execute {
                         val outcome = runCatching { handle(call) }
                         mainHandler.post {
@@ -45,6 +80,60 @@ class MainActivity : FlutterActivity() {
                         .onFailure { result.error("NATIVE_ERROR", it.message, null) }
                 }
             }
+    }
+
+    /**
+     * Uses the system document picker, so no storage permission is needed. The chosen file is copied
+     * into private storage and validated off the UI thread; null means the user cancelled.
+     */
+    private fun pickCustomSound(result: MethodChannel.Result) {
+        if (pendingSoundPick != null) {
+            result.error("BUSY", "A sound is already being chosen.", null)
+            return
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+        }
+        pendingSoundPick = result
+        runCatching {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQUEST_PICK_SOUND)
+        }.onFailure {
+            pendingSoundPick = null
+            result.error("CUSTOM_SOUND", "No file picker is available on this device.", null)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_PICK_SOUND) return
+        val result = pendingSoundPick ?: return
+        pendingSoundPick = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        val app = applicationContext
+        runCatching {
+            readQueue.execute {
+                val outcome = runCatching { CustomSounds.import(app, uri) }
+                mainHandler.post {
+                    if (!channelAlive) return@post
+                    outcome.onSuccess { result.success(mapOf("id" to it.id, "name" to it.name)) }
+                        .onFailure { result.error("CUSTOM_SOUND", it.message ?: "Could not use that file.", null) }
+                }
+            }
+        }.onFailure { result.error("NATIVE_ERROR", "Alarm activity is closing. Retry.", null) }
+    }
+
+    /** Off the UI thread; recent picks are spared, so an open editor never loses its file. */
+    private fun sweepCustomSounds() {
+        val app = applicationContext
+        runCatching { readQueue.execute { CustomSounds.sweep(app) } }
     }
 
     override fun onResume() {
@@ -92,6 +181,11 @@ class MainActivity : FlutterActivity() {
                 objectVerified = ObjectTargets.verified(this, call.argument<String>("objectTarget") ?: "sink"),
                 needsSetup = call.argument<Boolean>("needsSetup") ?: false,
                 skipUntilMillis = call.argument<Number>("skipUntilMillis")?.toLong() ?: 0L,
+                // A reference to a file that no longer exists is dropped, not kept: the bundled tone rings.
+                customSound = call.argument<String>("customSoundId").orEmpty()
+                    .takeIf { CustomSounds.fileFor(this, it) != null }.orEmpty(),
+                customSoundName = call.argument<String>("customSoundName").orEmpty().take(80),
+                vibrate = call.argument<Boolean>("vibrate") ?: true,
             )
             val triggerAt = (call.argument<Number>("triggerAtMillis"))?.toLong()
                 ?: NativeAlarmScheduler.nextTrigger(alarm.hour, alarm.minute, alarm.weekdays)
@@ -107,6 +201,7 @@ class MainActivity : FlutterActivity() {
                 "Enable Stay Awake notifications in Health before saving a check-in alarm"
             }
             NativeAlarmScheduler.schedule(this, alarm, triggerAt)
+            sweepCustomSounds()
             null
         }
 
@@ -132,13 +227,20 @@ class MainActivity : FlutterActivity() {
                 "needsSetup" to alarm.needsSetup,
                 "skipUntilMillis" to alarm.skipUntilMillis,
                 "nextTriggerAt" to alarm.nextTriggerAt,
+                "customSoundId" to alarm.customSound,
+                "customSoundName" to alarm.customSoundName,
+                "vibrate" to alarm.vibrate,
             )
         }
 
         "cancel" -> {
             val id = call.argument<String>("id")
                 ?: throw IllegalArgumentException("id is required")
+            val customSound = AlarmStore.get(this, id)?.customSound
             NativeAlarmScheduler.cancel(this, id)
+            // This alarm's file is only ever its own, so it goes with it.
+            CustomSounds.delete(this, customSound)
+            sweepCustomSounds()
             null
         }
 
@@ -188,8 +290,46 @@ class MainActivity : FlutterActivity() {
 
         "playAudibilitySample" -> {
             // Preview the picked tone before saving.
-            AudibilityProbe.play(this, call.argument<String>("soundPack"))
+            AudibilityProbe.play(this, call.argument<String>("soundPack"), vibrate = call.argument<Boolean>("vibrate") ?: false)
             null
+        }
+
+        "previewCustomSound" -> {
+            val file = CustomSounds.fileFor(this, call.argument<String>("id"))
+            checkNotNull(file) { "That sound file is no longer available. Choose it again." }
+            AudibilityProbe.play(this, file = file, vibrate = call.argument<Boolean>("vibrate") ?: false)
+            null
+        }
+
+        "listSystemSounds" -> {
+            // The device's own alarm tones, exactly like the stock Clock app's sound list.
+            // Use the application Context, never the Activity: the Activity constructor makes Android
+            // "manage" the cursor and re-query it on every restart (e.g. coming back from the file
+            // picker), which crashes once the cursor below is closed.
+            val context = applicationContext
+            val manager = android.media.RingtoneManager(context).apply {
+                setType(android.media.RingtoneManager.TYPE_ALARM)
+            }
+            val cursor = manager.cursor
+            try {
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val uri = manager.getRingtoneUri(cursor.position) ?: continue
+                        val name = manager.getRingtone(cursor.position)
+                            ?.getTitle(context) ?: continue
+                        add(mapOf("id" to uri.toString(), "name" to name))
+                    }
+                }
+            } finally {
+                cursor.close()
+            }
+        }
+
+        "importSystemSound" -> {
+            val uri = call.argument<String>("uri")
+                ?: throw IllegalArgumentException("uri is required")
+            val imported = CustomSounds.import(this, android.net.Uri.parse(uri))
+            mapOf("id" to imported.id, "name" to imported.name)
         }
 
         "stopAudibilitySample" -> {
@@ -251,14 +391,19 @@ object AudibilityProbe {
 
     private val handler = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
+    private var vibrator: android.os.Vibrator? = null
 
     /**
      * Plays the exact file a real alarm uses, looped, at the current alarm volume: the preview never
      * changes system volume.
      */
-    fun play(context: Context, pack: String? = null) {
+    fun play(
+        context: Context,
+        pack: String? = null,
+        file: java.io.File? = null,
+        vibrate: Boolean = false,
+    ) {
         stop()
-        val resId = AlarmSounds.resourceFor(context, pack)
         player = runCatching {
             MediaPlayer().apply {
                 setAudioAttributes(
@@ -267,15 +412,23 @@ object AudibilityProbe {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build(),
                 )
-                setDataSource(
-                    context,
-                    android.net.Uri.parse("android.resource://${context.packageName}/$resId"),
-                )
+                if (file != null) {
+                    // An uploaded tone previews exactly as it will ring.
+                    setDataSource(file.absolutePath)
+                } else {
+                    val resId = AlarmSounds.resourceFor(context, pack)
+                    setDataSource(
+                        context,
+                        android.net.Uri.parse("android.resource://${context.packageName}/$resId"),
+                    )
+                }
                 // The real alarm loops, so the preview does too.
                 isLooping = true
                 setOnPreparedListener { ready ->
                     if (player === ready) {
                         ready.start()
+                        // Same pulse as a real ring, and only when the alarm vibrates.
+                        if (vibrate) startVibration(context)
                         handler.postDelayed({ stop() }, PREVIEW_MS)
                     }
                 }
@@ -292,7 +445,25 @@ object AudibilityProbe {
         check(player != null) { "The alarm sound could not be opened" }
     }
 
+    private fun startVibration(context: Context) {
+        val manager = context.getSystemService(android.os.Vibrator::class.java) ?: return
+        vibrator = manager
+        val pattern = longArrayOf(0, 500, 300, 500)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                manager.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0))
+            } else {
+                @Suppress("DEPRECATION")
+                manager.vibrate(pattern, 0)
+            }
+        }.onFailure {
+            android.util.Log.w("WakeGuard", "Could not start preview vibration", it)
+        }
+    }
+
     private fun releasePlayer() {
+        runCatching { vibrator?.cancel() }
+        vibrator = null
         runCatching { player?.stop() }
         runCatching { player?.release() }
         player = null
