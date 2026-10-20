@@ -143,7 +143,10 @@ object NativeAlarmScheduler {
             return
         }
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
-        val triggerAt = nextTrigger(alarm.hour, alarm.minute, alarm.weekdays, maxOf(System.currentTimeMillis(), alarm.skipUntilMillis))
+        // Include the occurrence just handled: if it was delivered a moment early, "now" is still
+        // before it and the next trigger would land on the same minute, ringing twice.
+        val triggerAt = nextTrigger(alarm.hour, alarm.minute, alarm.weekdays,
+            maxOf(System.currentTimeMillis(), alarm.skipUntilMillis, alarm.nextTriggerAt))
         val next = alarm.copy(nextTriggerAt = triggerAt)
         AlarmStore.put(context, next)
         val primary = triggerPendingIntent(context, next)
@@ -151,6 +154,15 @@ object NativeAlarmScheduler {
         manager.setAlarmClock(
             AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, alarm)),
             primary,
+        )
+    }
+
+    /** Re-arms the saved occurrence unchanged, for a primary delivery that came before its time. */
+    fun rearmPrimary(context: Context, alarm: StoredAlarm) {
+        val manager = context.getSystemService(AlarmManager::class.java) ?: return
+        manager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(alarm.nextTriggerAt, showIntent(context, alarm)),
+            triggerPendingIntent(context, alarm),
         )
     }
 

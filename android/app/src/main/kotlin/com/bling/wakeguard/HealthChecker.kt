@@ -2,6 +2,7 @@ package com.bling.wakeguard
 
 import android.app.Activity
 import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.ActivityNotFoundException
@@ -9,6 +10,8 @@ import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.os.Process
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -44,6 +47,43 @@ object HealthChecker {
                 action = "exact_alarm",
             ),
         )
+
+        // Neither of these is visible to the exact-alarm permission, yet either one makes the OS
+        // drop the alarm while the app is closed, so "everything passed" must not hide them.
+        add(
+            health(
+                id = "battery_unrestricted",
+                label = "Battery restrictions",
+                passing = isIgnoringBatteryOptimizations(context),
+                ok = "WakeGuard is not limited by battery saving, so alarms can ring while the app is closed.",
+                bad = "Set WakeGuard’s battery use to No restrictions. Battery saving can stop the alarm from ringing when the app is closed.",
+                action = "battery_unrestricted",
+                // MIUI kills restricted apps and drops their alarms, so saving is refused there.
+                // Elsewhere Android still delivers exact alarms, so it is only advice.
+                severity = if (isXiaomiFamily()) HealthSeverityValue.blocking else HealthSeverityValue.warning,
+            ),
+        )
+
+        if (isXiaomiFamily()) {
+            val autostart = autostartAllowed(context)
+            add(
+                health(
+                    id = "autostart",
+                    label = "Autostart",
+                    passing = autostart == true,
+                    ok = "Autostart is on, so WakeGuard can wake up for an alarm after you close it.",
+                    bad = if (autostart == false) {
+                        "Turn on Autostart for WakeGuard. Without it, Xiaomi phones can drop the alarm once the app is closed."
+                    } else {
+                        "Make sure Autostart is on for WakeGuard. Without it, Xiaomi phones can drop the alarm once the app is closed. This phone does not report the setting, so check it yourself."
+                    },
+                    action = "autostart",
+                    // Block only when MIUI reports it is off. If the phone does not expose the
+                    // setting (null) we cannot verify it, and blocking would lock the user out.
+                    severity = if (autostart == false) HealthSeverityValue.blocking else HealthSeverityValue.warning,
+                ),
+            )
+        }
 
         add(
             health(
@@ -152,6 +192,38 @@ object HealthChecker {
             ?.canScheduleExactAlarms() == true
     }
 
+    /** True when the user has exempted the app from Doze/battery saving; needs no permission to read. */
+    private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        return runCatching {
+            context.getSystemService(PowerManager::class.java)
+                ?.isIgnoringBatteryOptimizations(context.packageName) == true
+        }.getOrDefault(false)
+    }
+
+    private fun isXiaomiFamily(): Boolean {
+        val maker = "${Build.MANUFACTURER} ${Build.BRAND}".lowercase()
+        return listOf("xiaomi", "redmi", "poco").any { it in maker }
+    }
+
+    /**
+     * MIUI keeps "Autostart" as a hidden app-op (10008). Returns null when this build does not
+     * expose it, so the caller can ask the user to check rather than claim it is fine.
+     */
+    private fun autostartAllowed(context: Context): Boolean? = runCatching {
+        val ops = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val check = ops.javaClass.getMethod(
+            "checkOpNoThrow",
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            String::class.java,
+        )
+        (check.invoke(ops, MIUI_OP_AUTO_START, Process.myUid(), context.packageName) as Int) ==
+            AppOpsManager.MODE_ALLOWED
+    }.getOrNull()
+
+    private const val MIUI_OP_AUTO_START = 10008
+
     private fun alarmStreamVolume(context: Context): Int = runCatching {
         context.getSystemService(AudioManager::class.java)
             ?.getStreamVolume(AudioManager.STREAM_ALARM) ?: 0
@@ -203,10 +275,57 @@ object HealthChecker {
     // endregion
 
     /**
+     * Most specific screen first (MIUI's own pages on Xiaomi), ending in screens every phone has.
+     * Component intents cannot be pre-checked with resolveActivity under package visibility, so
+     * [openFirstAvailable] simply tries them in order.
+     */
+    private fun vendorFixIntents(context: Context, action: String): List<Intent> {
+        val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.parse("package:${context.packageName}"))
+        return when (action) {
+            "autostart" -> listOf(
+                Intent().setClassName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.autostart.AutoStartManagementActivity",
+                ),
+                details,
+            )
+
+            else -> listOf(
+                Intent().setClassName(
+                    "com.miui.powerkeeper",
+                    "com.miui.powerkeeper.ui.HiddenAppsConfigActivity",
+                ).putExtra("package_name", context.packageName)
+                    .putExtra("package_label", context.applicationInfo.loadLabel(context.packageManager).toString()),
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                details,
+            )
+        }
+    }
+
+    private fun openFirstAvailable(context: Context, candidates: List<Intent>): String? {
+        for (intent in candidates) {
+            if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(intent)
+                return null
+            } catch (missing: ActivityNotFoundException) {
+                android.util.Log.i("WakeGuard", "Settings page unavailable: ${intent.component ?: intent.action}")
+            } catch (denied: SecurityException) {
+                android.util.Log.i("WakeGuard", "Settings page not permitted: ${intent.component ?: intent.action}")
+            }
+        }
+        return "Open your phone’s Settings and find WakeGuard to change this setting."
+    }
+
+    /**
      * Opens the settings screen that fixes [action], returning null on success or a readable reason
      * on failure. Failures are surfaced rather than swallowed so a dead button is diagnosable.
      */
     fun openFix(context: Context, action: String): String? {
+        if (action == "battery_unrestricted" || action == "autostart") {
+            return openFirstAvailable(context, vendorFixIntents(context, action))
+        }
         val intent: Intent = when (action) {
             "exact_alarm" -> Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
                 data = Uri.parse("package:${context.packageName}")

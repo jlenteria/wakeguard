@@ -54,6 +54,12 @@ class AlarmReceiver : BroadcastReceiver() {
             return
         }
         val expected = intent.getLongExtra(NativeAlarmScheduler.EXTRA_TRIGGER_AT, 0L)
+        if (AlarmPolicy.arrivedEarly(alarm.enabled, alarm.nextTriggerAt, expected, now)) {
+            android.util.Log.w(TAG, "Trigger for $id arrived ${expected - now} ms early; re-arming")
+            runCatching { NativeAlarmScheduler.rearmPrimary(context, alarm) }
+                .onFailure { android.util.Log.e(TAG, "Early trigger could not be re-armed", it) }
+            return
+        }
         if (!AlarmPolicy.acceptsPrimary(alarm.enabled, alarm.nextTriggerAt, expected, now)) {
             android.util.Log.w(TAG, "Trigger for $id rejected: enabled=${alarm.enabled} saved=${alarm.nextTriggerAt} incoming=$expected now=$now")
             return

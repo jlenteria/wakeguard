@@ -36,7 +36,9 @@ class DeviceGuidance {
           'While unlocked outside WakeGuard, Android may show a notification '
           'instead of opening the challenge. On Samsung, check Show as pop-up '
           'for Ringing alarms and try Detailed notification pop-ups if Brief '
-          'pop-ups or Edge lighting hide the alert. '
+          'pop-ups or Edge lighting hide the alert. On Xiaomi, Redmi or POCO, '
+          'turn on Autostart, set Battery saver to No restrictions and lock '
+          'WakeGuard in Recent apps so it is not cleared. '
           'Setting names vary by phone brand.',
     TargetPlatform.iOS =>
       'Allow WakeGuard notifications and sounds in your iPhone’s Settings. '
