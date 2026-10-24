@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="branding/wakeguard-logo.png" alt="WakeGuard: an orange alarm clock with a checkmark" width="160" />
+  <img src="branding/wakeguard-mark.png" alt="WakeGuard logo" width="160" />
 </p>
 
 <h1 align="center">WakeGuard</h1>
 
 <p align="center"><strong>Wake up. Complete a challenge. Stay awake.</strong></p>
 
-<p align="center">Free · Offline-first · No ads · No accounts</p>
+<p align="center">Source-available for viewing only · No license to use, build, or distribute</p>
+
+> **Usage notice:** This repository is published for viewing and reference only. You do **not** have permission to use, build, run, modify, or distribute this software or any derivative works without explicit written consent from the copyright holder. See [LICENSE](LICENSE) for full terms.
 
 <p align="center">
   <a href="#features">Features</a> ·
@@ -16,14 +18,12 @@
 </p>
 
 An offline alarm clock for people who dismiss an alarm and fall back asleep.
-Choose a wake challenge, practice it, and optionally ask WakeGuard to check
-you are still up a few minutes later. Alarm readiness is visible before bed.
 
 - **In development:** builds and real-device acceptance testing are pending;
   this is not yet a production-ready release.
 - **Android-first.** An iOS target is included, but current development and
   release verification focus on Android.
-- **Free, no ads, no accounts.** Alarm records stay on device; Google ML Kit's
+- **No ads · No accounts.** Alarm records stay on device; Google ML Kit's
   SDK diagnostics are disclosed in the Privacy policy.
 - **Camera** is used only while a wake challenge is on screen. Frames are never
   saved or transmitted.
@@ -64,36 +64,22 @@ you are still up a few minutes later. Alarm readiness is visible before bed.
 
 ## Screenshots
 
-Captured on a Samsung SM-A075F physical device (720×1600). Home contains sample
-alarms; History includes a completed scheduled alarm. Challenge images show
-practice mode.
-
 <p align="center">
   <img src="docs/screenshots/onboarding.png" width="16%" alt="Onboarding" />
-  <img src="docs/screenshots/home.png" width="16%" alt="Alarm list" />
-  <img src="docs/screenshots/settings.png" width="16%" alt="Settings and wake-up QR" />
-  <img src="docs/screenshots/challenge-face.png" width="16%" alt="Face challenge practice" />
-  <img src="docs/screenshots/health.png" width="16%" alt="Alarm readiness checks" />
-  <img src="docs/screenshots/history.png" width="16%" alt="Wake-up history and streaks" />
+  <img src="docs/screenshots/alarms.png" width="16%" alt="Alarms" />
+  <img src="docs/screenshots/add_alarm.png" width="16%" alt="Add alarm" />
+  <img src="docs/screenshots/settings.png" width="16%" alt="Settings" />
+  <img src="docs/screenshots/challenge_1.png" width="16%" alt="Challenge" />
+  <img src="docs/screenshots/challenge_2.png" width="16%" alt="Challenge 2" />
 </p>
-
-<p align="center"><sub>Onboarding · Alarms · Settings · Challenge · Health · History</sub></p>
 
 <p align="center">
-  <img src="docs/screenshots/challenge-tap.png" width="19%" alt="Tap-to-stop practice" />
-  <img src="docs/screenshots/challenge-face.png" width="19%" alt="Face challenge practice" />
-  <img src="docs/screenshots/challenge-object-sink.png" width="19%" alt="Find a sink practice" />
-  <img src="docs/screenshots/challenge-object-cup.png" width="19%" alt="Find a cup practice" />
-  <img src="docs/screenshots/challenge-qr.png" width="19%" alt="QR challenge practice" />
+  <img src="docs/screenshots/health.png" width="16%" alt="Health" />
+  <img src="docs/screenshots/history.png" width="16%" alt="History" />
+  <img src="docs/screenshots/checkin.png" width="16%" alt="Check-in" />
+  <img src="docs/screenshots/completed.png" width="16%" alt="Completed" />
 </p>
 
-<p align="center"><sub>Tap to stop · Face · Sink · Cup · QR code</sub></p>
-
-<p align="center">
-  <img src="docs/screenshots/challenge-success.jpg" width="25%" alt="Challenge practice completed successfully" />
-</p>
-
-<p align="center"><sub>Challenge success</sub></p>
 
 ## What makes an alarm ring
 

@@ -13,7 +13,7 @@ def main():
     with Image.open(root / "branding/wakeguard-logo.png") as source:
         rgba = source.convert("RGBA")
         # Remove pre-rounded transparent corners; iOS applies its own mask.
-        artwork = Image.new("RGB", rgba.size, "#141C2B")
+        artwork = Image.new("RGB", rgba.size, "#10141A")
         artwork.paste(rgba, mask=rgba.getchannel("A"))
         for entry in entries:
             size = round(float(entry["size"].split("x")[0]) * float(entry["scale"].removesuffix("x")))

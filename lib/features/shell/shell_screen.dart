@@ -18,6 +18,7 @@ import '../onboarding/onboarding_screen_view_model.dart';
 import '../settings/settings_screen.dart';
 import '../settings/settings_screen_view_model.dart';
 import 'shell_screen_view_model.dart';
+import 'splash_view.dart';
 import '../../shared/toast.dart';
 import 'package:provider/provider.dart';
 
@@ -30,9 +31,7 @@ class ShellScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!viewModel.settings.loaded) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (!viewModel.settings.loaded) return const SplashView();
     if (!viewModel.settings.settings.onboardingDone) {
       return ChangeNotifierProvider<OnboardingScreenViewModel>(
         create: (_) => OnboardingScreenViewModel(
@@ -83,6 +82,10 @@ class ShellScreen extends StatelessWidget {
                                     builder: (_, vm, _) => AlarmsScreen(
                                       viewModel: vm,
                                       onOpenHealth: viewModel.openHealth,
+                                      onAdd: () =>
+                                          _openEditor(context, viewModel),
+                                      editorOpen:
+                                          viewModel.editorOpenListenable,
                                       onOpen: (alarm) => _openEditor(
                                         context,
                                         viewModel,
@@ -161,39 +164,26 @@ class ShellScreen extends StatelessWidget {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.alarm_outlined),
-            selectedIcon: Icon(Icons.alarm),
+            selectedIcon: Icon(Icons.alarm_outlined),
             label: 'Alarms',
           ),
           NavigationDestination(
-            icon: Icon(Icons.health_and_safety_outlined),
-            selectedIcon: Icon(Icons.health_and_safety),
+            icon: Icon(Icons.bedtime_outlined),
+            selectedIcon: Icon(Icons.bedtime_outlined),
             label: 'Health',
           ),
           NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
+            icon: Icon(Icons.auto_graph),
+            selectedIcon: Icon(Icons.auto_graph),
             label: 'History',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+            icon: Icon(Icons.tune_outlined),
+            selectedIcon: Icon(Icons.tune_outlined),
             label: 'Settings',
           ),
         ],
       ),
-      floatingActionButton: viewModel.tab == 0
-          ? ValueListenableBuilder<bool>(
-              valueListenable: viewModel.editorOpenListenable,
-              builder: (context, editorOpen, _) =>
-                  FloatingActionButton.extended(
-                    onPressed: editorOpen
-                        ? null
-                        : () => _openEditor(context, viewModel),
-                    icon: const Icon(Icons.alarm_add),
-                    label: const Text('Add alarm'),
-                  ),
-            )
-          : null,
     );
   }
 

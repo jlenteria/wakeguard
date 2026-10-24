@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'qr_sheet_view_model.dart';
+import '../../shared/theme.dart';
 import '../../shared/toast.dart';
 import 'package:provider/provider.dart';
 
@@ -48,37 +49,46 @@ class QrSheetScreen extends StatelessWidget {
           children: [
             Text(
               'Scan to stop the alarm',
-              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const SizedBox(height: 16),
-            RepaintBoundary(
-              key: viewModel.boundaryKey,
-              // Transparent background shares as a black square on dark themes; force white.
-              child: ColoredBox(
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
                 color: Colors.white,
-                child: QrImageView(
-                  data: viewModel.value,
-                  size: qrSize,
-                  backgroundColor: Colors.white,
-                  // qr_flutter renders encode failures as a blank square users mistake for "will not scan".
-                  errorStateBuilder: (context, error) => SizedBox(
-                    width: qrSize,
-                    height: qrSize,
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 32,
-                          color: Colors.black87,
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Could not show this QR code.\nTry a shorter code value in the alarm editor.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.black87),
-                        ),
-                      ],
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: WakeTokens.of(context).ghostBorder),
+              ),
+              child: RepaintBoundary(
+                key: viewModel.boundaryKey,
+                // Transparent background shares as a black square on dark themes; force white.
+                child: ColoredBox(
+                  color: Colors.white,
+                  child: QrImageView(
+                    data: viewModel.value,
+                    size: qrSize,
+                    backgroundColor: Colors.white,
+                    // qr_flutter renders encode failures as a blank square users mistake for "will not scan".
+                    errorStateBuilder: (context, error) => SizedBox(
+                      width: qrSize,
+                      height: qrSize,
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 32,
+                            color: Colors.black87,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Could not show this QR code.\nTry a shorter code value in the alarm editor.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.black87),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -94,10 +104,12 @@ class QrSheetScreen extends StatelessWidget {
             Text(
               'Print this code or show it on another device away from bed. '
               'If it will not scan, improve the lighting and keep the whole code in view.',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(

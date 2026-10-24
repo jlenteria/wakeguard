@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash (dark mode): Obsidian Dawn canvas with the WakeGuard logo. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">@color/wakeguard_canvas</item>
+        <item name="android:navigationBarColor">@color/wakeguard_canvas</item>
+        <item name="android:windowSplashScreenBackground">#10141A</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon_inset</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/wakeguard_canvas</item>
+    </style>
+</resources>

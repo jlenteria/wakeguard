@@ -21,6 +21,8 @@ data class AlarmSession(
     val occurrenceStartedAt: Long = startedAt,
     val occurrenceElapsed: Long = startedElapsed,
     val occurrenceBoot: Int = bootCount,
+    /** When the check-in prompt was actually shown; the response window starts here. */
+    val promptedAt: Long = 0L,
 ) {
     fun json() = JSONObject().apply {
         put("token", token); put("alarm", alarm.toJson())
@@ -29,7 +31,7 @@ data class AlarmSession(
         put("followUp", followUp); put("checkAt", checkAt)
         put("startedElapsed", startedElapsed); put("bootCount", bootCount)
         put("occurrenceStartedAt", occurrenceStartedAt); put("occurrenceElapsed", occurrenceElapsed)
-        put("occurrenceBoot", occurrenceBoot)
+        put("occurrenceBoot", occurrenceBoot); put("promptedAt", promptedAt)
     }.toString()
 
     fun elapsed(context: Context): Long = AlarmPolicy.elapsed(startedAt, startedElapsed, bootCount,
@@ -39,28 +41,72 @@ data class AlarmSession(
 
 object AlarmSessions {
     const val EXTRA_SESSION = "sessionId"
+
+    /** How long a deleted alarm's occurrence is kept, so Undo can resume it. */
+    const val HOLD_MS = 10L * 60_000L
+
     private fun prefs(context: Context) =
         context.createDeviceProtectedStorageContext().getSharedPreferences("wakeguard.sessions.v1", Context.MODE_PRIVATE)
 
-    fun all(context: Context): List<AlarmSession> = prefs(context).all.values
-        .filterIsInstance<String>().mapNotNull { raw -> runCatching {
-            val j = JSONObject(raw)
-            AlarmSession(j.getString("token"), StoredAlarm.fromJson(j.getJSONObject("alarm").toString())!!,
-                j.getLong("scheduledAt"), j.getLong("startedAt"), j.getString("phase"),
-                j.optInt("snoozes"), j.optBoolean("followUp"), j.optLong("checkAt"), j.optLong("startedElapsed"), j.optInt("bootCount", -1),
-                j.optLong("occurrenceStartedAt", j.getLong("startedAt")), j.optLong("occurrenceElapsed"), j.optInt("occurrenceBoot", -1))
-        }.getOrNull() }
+    private fun heldPrefs(context: Context) =
+        context.createDeviceProtectedStorageContext().getSharedPreferences("wakeguard.sessions.held.v1", Context.MODE_PRIVATE)
 
-    fun get(context: Context, id: String): AlarmSession? {
-        val raw = prefs(context).getString(id, null) ?: return null
-        return runCatching {
-            val j = JSONObject(raw)
-            AlarmSession(j.getString("token"), StoredAlarm.fromJson(j.getJSONObject("alarm").toString())!!,
-                j.getLong("scheduledAt"), j.getLong("startedAt"), j.getString("phase"),
-                j.optInt("snoozes"), j.optBoolean("followUp"), j.optLong("checkAt"), j.optLong("startedElapsed"), j.optInt("bootCount", -1),
-                j.optLong("occurrenceStartedAt", j.getLong("startedAt")), j.optLong("occurrenceElapsed"), j.optInt("occurrenceBoot", -1))
-        }.getOrNull()
+    private fun decode(raw: String): AlarmSession? = runCatching {
+        val j = JSONObject(raw)
+        AlarmSession(j.getString("token"), StoredAlarm.fromJson(j.getJSONObject("alarm").toString())!!,
+            j.getLong("scheduledAt"), j.getLong("startedAt"), j.getString("phase"),
+            j.optInt("snoozes"), j.optBoolean("followUp"), j.optLong("checkAt"), j.optLong("startedElapsed"), j.optInt("bootCount", -1),
+            j.optLong("occurrenceStartedAt", j.getLong("startedAt")), j.optLong("occurrenceElapsed"), j.optInt("occurrenceBoot", -1),
+            j.optLong("promptedAt"))
+    }.getOrNull()
+
+    fun all(context: Context): List<AlarmSession> = prefs(context).all.values
+        .filterIsInstance<String>().mapNotNull(::decode)
+
+    fun get(context: Context, id: String): AlarmSession? =
+        prefs(context).getString(id, null)?.let(::decode)
+
+    /**
+     * Stops a deleted alarm's timers but keeps its occurrence for [HOLD_MS], so Undo resumes the
+     * same ring, snooze or check-in with the values it had, rather than a fresh schedule.
+     */
+    fun hold(context: Context, id: String) {
+        val session = get(context, id) ?: return
+        StayAwake.cancel(context, session)
+        NativeAlarmScheduler.disarmRungs(context, id)
+        val ringing = session.phase == "ringing"
+        if (ringing) {
+            RingingService.stop(context, id, session.token)
+            RingingService.cancelFallbackNotification(context, id)
+        }
+        if (session.phase != "done") {
+            val stored = JSONObject(session.json()).put("heldAt", System.currentTimeMillis()).toString()
+            heldPrefs(context).edit().putString(id, stored).commit()
+        }
+        prefs(context).edit().remove(id).commit()
+        // A deleted ring gives the queue back to the next alarm.
+        if (ringing) Handler(Looper.getMainLooper()).postDelayed({ drain(context.applicationContext) }, 150L)
     }
+
+    /** Takes the held occurrence for [id] once, so only a single schedule can resume it. */
+    fun takeHeld(context: Context, id: String): AlarmSession? {
+        val raw = heldPrefs(context).getString(id, null) ?: return null
+        heldPrefs(context).edit().remove(id).commit()
+        val heldAt = runCatching { JSONObject(raw).optLong("heldAt") }.getOrDefault(0L)
+        if (System.currentTimeMillis() - heldAt > HOLD_MS) return null
+        return decode(raw)
+    }
+
+    /** Forgets held occurrences whose undo window has closed. */
+    fun sweepHeld(context: Context) {
+        val cutoff = System.currentTimeMillis() - HOLD_MS
+        val p = heldPrefs(context)
+        for ((key, raw) in p.all) {
+            val heldAt = runCatching { JSONObject(raw as String).optLong("heldAt") }.getOrDefault(0L)
+            if (heldAt < cutoff) p.edit().remove(key).commit()
+        }
+    }
+
     fun active(context: Context) = all(context).firstOrNull { it.phase == "ringing" && !isStale(context, it) }
 
     /**
@@ -159,7 +205,13 @@ object AlarmSessions {
         bootCount = currentBoot(context))
 
     fun restore(context: Context) {
-        for (session in all(context)) runCatching {
+        for (session in all(context)) restore(context, session)
+        drain(context)
+    }
+
+    /** Re-arms the timers one persisted occurrence still needs. */
+    fun restore(context: Context, session: AlarmSession) {
+        runCatching {
             if (session.alarm.needsSetup && session.phase in setOf("ringing", "snoozed", "queued")) {
                 AlarmEvents.record(context, session, "challenge_setup_required")
                 StayAwake.cancel(context, session)
@@ -167,12 +219,12 @@ object AlarmSessions {
                 return@runCatching
             }
             when (session.phase) {
-            "checkin" -> StayAwake.restore(context, session)
-            "snoozed" -> NativeAlarmScheduler.armSnooze(context, session, session.checkAt)
-            "ringing" -> NativeAlarmScheduler.armRecovery(context, session)
-            else -> Unit
-        } }.onFailure { android.util.Log.e("WakeGuard", "Session restore failed", it) }
-        drain(context)
+                "checkin" -> StayAwake.restore(context, session)
+                "snoozed" -> NativeAlarmScheduler.armSnooze(context, session, session.checkAt)
+                "ringing" -> NativeAlarmScheduler.armRecovery(context, session)
+                else -> Unit
+            }
+        }.onFailure { android.util.Log.e("WakeGuard", "Session restore failed", it) }
     }
 }
 

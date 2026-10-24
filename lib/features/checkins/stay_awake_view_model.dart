@@ -25,7 +25,6 @@ class StayAwakeViewModel extends ViewModel with WidgetsBindingObserver {
   bool _foreground = true;
   bool _refreshing = false;
   bool _confirming = false;
-  int _ticks = 0;
   int _refreshRevision = 0;
   String? error;
 
@@ -46,9 +45,9 @@ class StayAwakeViewModel extends ViewModel with WidgetsBindingObserver {
       final wasVisible = current != null;
       _now = DateTime.now();
       if (wasVisible || current != null) safeNotify();
-      // While a response window is open, reflect notification confirmations promptly.
-      // Pending future windows are cached, so the card appears at the due time.
-      if (++_ticks % 5 == 0 || current != null) unawaited(refresh());
+      // Windows are only listed once their native prompt has been shown, so poll
+      // every tick to show the card with the notification and reflect confirmations.
+      unawaited(refresh());
     });
   }
 

@@ -75,7 +75,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final face = find.widgetWithText(ListTile, 'Face');
+    final face = find.widgetWithText(ListTile, 'Face check');
     await reveal(tester, face, 250);
     bool stepsShown() =>
         find.text('Face challenge steps').evaluate().isNotEmpty;
@@ -90,7 +90,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(stepsShown(), !onByDefault);
 
-    await tester.tap(find.widgetWithText(ListTile, 'Face'));
+    await tester.tap(find.widgetWithText(ListTile, 'Face check'));
     await tester.pumpAndSettle();
     expect(stepsShown(), onByDefault);
   });
@@ -103,8 +103,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Tap to change time'), findsOneWidget);
-    expect(find.text('Alarm time'), findsOneWidget);
+    expect(find.text('ALARM TIME'), findsOneWidget);
 
+    // The presets now sit above the time card, so bring it into view first.
+    await tester.ensureVisible(find.text('Tap to change time'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Tap to change time'));
     await tester.pumpAndSettle();
     expect(find.byType(Dialog), findsOneWidget);
@@ -454,6 +457,11 @@ void main() {
         250,
       );
       expect(find.widgetWithText(TextField, 'QR code value'), findsOneWidget);
+      final qr = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'QR code value'),
+      );
+      // Choosing the preset must also give the QR challenge a code to scan.
+      expect(qr.controller!.text.trim(), isNotEmpty);
       await reveal(tester, find.text('Your wake-up object'), 250);
       await reveal(tester, find.widgetWithText(ChoicePill, 'No snooze'), 250);
       expect(
@@ -474,6 +482,27 @@ void main() {
       );
     },
   );
+
+  testWidgets('get-out-of-bed preset can practise with its generated QR', (
+    tester,
+  ) async {
+    final engine = _PracticeEngine();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AlarmEditor(engine: engine)),
+      ),
+    );
+    await tester.tap(find.widgetWithText(ListTile, 'Get out of bed'));
+    await tester.pumpAndSettle();
+    final button = find.text('Practice this challenge — no alarm scheduled');
+    await reveal(tester, button, 250);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(engine.practiced, isNotNull);
+    expect(engine.practiced!.escapes, {EscapeKind.object, EscapeKind.qr});
+    expect(engine.practiced!.qrValue.trim(), isNotEmpty);
+    expect(find.textContaining('needs a code'), findsNothing);
+  });
 
   testWidgets('practice uses the chosen draft without scheduling an alarm', (
     tester,

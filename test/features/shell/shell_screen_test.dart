@@ -87,8 +87,8 @@ void main() {
         await tester.pumpAndSettle();
 
         final openEditor = tester
-            .widget<FloatingActionButton>(
-              find.widgetWithText(FloatingActionButton, 'Add alarm'),
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Add New Alarm'),
             )
             .onPressed!;
         openEditor();

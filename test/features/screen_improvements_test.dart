@@ -17,6 +17,7 @@ import 'package:wakeguard/features/settings/settings_screen_view_model.dart';
 import 'package:wakeguard/models/alarm.dart';
 import 'package:wakeguard/models/health.dart';
 import 'package:wakeguard/platform/alarm_engine.dart';
+import 'package:wakeguard/shared/brand.dart';
 
 class _Engine extends EngineUnavailable {
   @override
@@ -172,17 +173,32 @@ void main() {
     await showAlarms(tester);
     final at = controller.nextFireTime('next')!;
     final context = tester.element(find.byType(AlarmsScreen));
+    final now = DateTime.now();
+    final days =
+        (DateTime(at.year, at.month, at.day)
+                    .difference(DateTime(now.year, now.month, now.day))
+                    .inHours /
+                24)
+            .round();
+    final day = days <= 0
+        ? 'today'
+        : days == 1
+        ? 'tomorrow'
+        : 'on ${MaterialLocalizations.of(context).formatMediumDate(at)}';
+    final caption = find.byKey(const ValueKey('next-alarm-caption'));
+    expect(caption, findsOneWidget);
     expect(
-      find.text(
-        '${TimeOfDay.fromDateTime(at).format(context)} · Work · '
-        '${MaterialLocalizations.of(context).formatMediumDate(at)}',
+      find.descendant(
+        of: caption,
+        matching: find.textContaining('Next alarm $day '),
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('next-alarm-caption')), findsOneWidget);
+    // The hero names the soonest alarm under its time.
+    expect(find.text('Work'), findsOneWidget);
   });
 
-  testWidgets('alarm rows are white with a shadow in light mode', (
+  testWidgets('alarm rows are rounded surface cards', (
     tester,
   ) async {
     await initialize(
@@ -199,14 +215,13 @@ void main() {
     await showAlarms(tester);
     await tester.scrollUntilVisible(find.byType(Dismissible), 200);
     await tester.pumpAndSettle();
-    final card = tester.widget<Card>(
+    final card = tester.widget<SurfaceCard>(
       find.descendant(
         of: find.byType(Dismissible),
-        matching: find.byType(Card),
+        matching: find.byType(SurfaceCard),
       ),
     );
-    expect(card.color, Colors.white);
-    expect(card.elevation, greaterThan(0));
+    expect(card.radius, greaterThanOrEqualTo(28));
   });
 
   testWidgets(
@@ -286,7 +301,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Version 1.2.3 (42)'));
+      // The settings list builds lazily; scroll until About exists.
+      await tester.scrollUntilVisible(find.text('Version 1.2.3 (42)'), 200);
       expect(find.text('Wake-ups'), findsNothing);
       await tester.ensureVisible(find.text('Show wake-up QR'));
       // Two events before rebuilding must still open only one sheet.

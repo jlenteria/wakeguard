@@ -70,11 +70,24 @@ object StayAwake {
             data = android.net.Uri.parse("wakeguard://checkin/${session.token}/$stage")
             putExtra("id", session.alarm.id); putExtra(AlarmSessions.EXTRA_SESSION, session.token)
             putExtra("stage", stage)
+            // Background broadcast queues can hold the prompt for tens of seconds.
+            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    private fun showApp(context: Context): PendingIntent =
+        PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    /** The response window only exists once the prompt has actually been shown. */
+    fun windowOpen(session: AlarmSession, now: Long = System.currentTimeMillis()) =
+        session.promptedAt > 0L && now >= session.promptedAt && now < deadline(session)
+
+    fun deadline(session: AlarmSession) = session.promptedAt + GRACE_MS
 
     fun schedule(context: Context, session: AlarmSession) {
         check(session.alarm.checkInMinutes > 0 && !session.followUp) { "Check-in is not enabled for this occurrence" }
-        val waiting = session.copy(phase = "checkin", checkAt = System.currentTimeMillis() + session.alarm.checkInMinutes * 60_000L)
+        val waiting = session.copy(phase = "checkin", promptedAt = 0L,
+            checkAt = System.currentTimeMillis() + session.alarm.checkInMinutes * 60_000L)
         AlarmSessions.save(context, waiting)
         restore(context, waiting)
         AlarmEvents.record(context, waiting, "checkin_scheduled")
@@ -83,23 +96,40 @@ object StayAwake {
 
     fun restore(context: Context, session: AlarmSession) {
         val now = System.currentTimeMillis()
-        if (now > session.checkAt + GRACE_MS + AlarmDefaults.MAX_RINGING_MS) {
+        val windowStart = if (session.promptedAt > 0L) session.promptedAt else session.checkAt
+        if (now > windowStart + GRACE_MS + AlarmDefaults.MAX_RINGING_MS) {
             AlarmEvents.record(context, session, "checkin_expired")
             AlarmSessions.save(context, session.copy(phase = "done"))
             cancel(context, session)
             return
         }
         val manager = context.getSystemService(AlarmManager::class.java)
-        val show = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val show = showApp(context)
         // A one-minute response window must not compete with idle-alarm quotas.
-        // Do not show an already-expired prompt which cannot be confirmed.
-        if (now < session.checkAt + GRACE_MS) {
+        if (session.promptedAt == 0L) {
+            // The deadline is armed only once the prompt is shown, so the countdown
+            // never starts before the user can see it.
+            manager.cancel(operation(context, session, "deadline"))
             manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 500L, session.checkAt), show), operation(context, session, "prompt"))
+            return
+        }
+        // Do not show an already-expired prompt which cannot be confirmed.
+        if (now < deadline(session)) {
+            manager.setAlarmClock(AlarmManager.AlarmClockInfo(now + 500L, show), operation(context, session, "prompt"))
         } else {
             manager.cancel(operation(context, session, "prompt"))
         }
-        manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 1000L, session.checkAt + GRACE_MS), show), operation(context, session, "deadline"))
+        manager.setAlarmClock(AlarmManager.AlarmClockInfo(maxOf(now + 1000L, deadline(session)), show), operation(context, session, "deadline"))
+    }
+
+    /** Starts the response window now, persisting it before anything is shown. */
+    fun open(context: Context, session: AlarmSession): AlarmSession {
+        if (session.promptedAt > 0L) return session
+        val opened = session.copy(promptedAt = System.currentTimeMillis())
+        AlarmSessions.save(context, opened)
+        context.getSystemService(AlarmManager::class.java).setAlarmClock(
+            AlarmManager.AlarmClockInfo(deadline(opened), showApp(context)), operation(context, opened, "deadline"))
+        return opened
     }
 
     fun prompt(context: Context, session: AlarmSession) {
@@ -108,7 +138,7 @@ object StayAwake {
             android.util.Log.w("WakeGuard", "Check-in notification is blocked for ${session.alarm.id}; deadline remains armed")
             return
         }
-        val remainingSeconds = ((session.checkAt + GRACE_MS - System.currentTimeMillis()) / 1000L).coerceIn(1L, 60L)
+        val remainingSeconds = ((deadline(session) - System.currentTimeMillis() + 999L) / 1000L).coerceIn(1L, 60L)
         val manager = context.getSystemService(NotificationManager::class.java)
         val sound = reminderSound(context)
         createChannel(context)
@@ -143,8 +173,7 @@ object StayAwake {
     fun confirm(context: Context, id: String, token: String?): Boolean {
         val session = AlarmSessions.get(context, id) ?: return false
         if (session.phase != "checkin" || token == null || session.token != token) return false
-        val now = System.currentTimeMillis()
-        if (now < session.checkAt || now >= session.checkAt + GRACE_MS) return false
+        if (!windowOpen(session)) return false
         // Persist first: a failed write must leave the deadline armed for recovery.
         AlarmSessions.save(context, session.copy(phase = "done"))
         cancel(context, session)
@@ -163,9 +192,16 @@ class CheckInReceiver : BroadcastReceiver() {
             "prompt" -> {
                 if (now < session.checkAt) {
                     StayAwake.restore(context, session)
-                } else if (now < session.checkAt + StayAwake.GRACE_MS) {
-                    runCatching { StayAwake.prompt(context, session) }.onFailure {
-                        AlarmEvents.record(context, session, "checkin_notification_failed")
+                    return
+                }
+                val opened = runCatching { StayAwake.open(context, session) }.getOrElse {
+                    AlarmEvents.record(context, session, "checkin_failed")
+                    android.util.Log.e("WakeGuard", "Check-in window could not be opened", it)
+                    return
+                }
+                if (StayAwake.windowOpen(opened, System.currentTimeMillis())) {
+                    runCatching { StayAwake.prompt(context, opened) }.onFailure {
+                        AlarmEvents.record(context, opened, "checkin_notification_failed")
                         android.util.Log.e("WakeGuard", "Check-in prompt failed", it)
                     }
                 }
@@ -174,12 +210,12 @@ class CheckInReceiver : BroadcastReceiver() {
                 StayAwake.confirm(context, id, session.token)
             }
             "deadline" -> {
-                if (now < session.checkAt + StayAwake.GRACE_MS) {
+                if (session.promptedAt == 0L || now < StayAwake.deadline(session)) {
                     StayAwake.restore(context, session)
                     return
                 }
                 StayAwake.cancel(context, session)
-                if (now > session.checkAt + StayAwake.GRACE_MS + AlarmDefaults.MAX_RINGING_MS) {
+                if (now > StayAwake.deadline(session) + AlarmDefaults.MAX_RINGING_MS) {
                     AlarmEvents.record(context, session, "checkin_expired")
                     AlarmSessions.save(context, session.copy(phase = "done"))
                     return

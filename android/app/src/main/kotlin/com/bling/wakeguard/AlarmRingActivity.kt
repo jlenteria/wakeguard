@@ -6,7 +6,11 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ClipDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -20,6 +24,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -34,6 +39,10 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.core.widget.TextViewCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -56,12 +65,15 @@ class AlarmRingActivity : AppCompatActivity() {
     private val main = Handler(Looper.getMainLooper())
     private val analyzing = AtomicBoolean(false)
     private val objectProgress = ObjectRecognitionProgress()
-    private val modeButtons = mutableMapOf<Mode, Button>()
+    private class ModeRow(val root: LinearLayout, val icon: ImageView, val title: TextView, val badge: TextView, val chevron: ImageView)
+    private val modeButtons = mutableMapOf<Mode, ModeRow>()
     private var progressAnimator: ObjectAnimator? = null
     private lateinit var screen: FrameLayout
     private lateinit var instructionCard: LinearLayout
     private lateinit var instruction: TextView
     private lateinit var step: TextView
+    private lateinit var stepDots: LinearLayout
+    private lateinit var instructionIcon: ImageView
     private lateinit var hint: TextView
     private lateinit var status: TextView
     private lateinit var progress: ProgressBar
@@ -69,6 +81,10 @@ class AlarmRingActivity : AppCompatActivity() {
     private lateinit var preview: PreviewView
     private lateinit var guide: ChallengeGuideView
     private lateinit var previewBadge: TextView
+    private var activeCount: TextView? = null
+    private val headlineFont by lazy { loadFont(R.font.plus_jakarta_sans_bold, Typeface.DEFAULT_BOLD) }
+    private val labelFont by lazy { loadFont(R.font.inter_semibold, Typeface.DEFAULT_BOLD) }
+    private val bodyFont by lazy { loadFont(R.font.inter_regular, Typeface.DEFAULT) }
     private lateinit var retryCamera: Button
     private var provider: ProcessCameraProvider? = null
     private var faceDetector: com.google.mlkit.vision.face.FaceDetector? = null
@@ -108,11 +124,24 @@ class AlarmRingActivity : AppCompatActivity() {
         const val REQUEST_CAMERA = 4321
         const val ANALYSIS_MS = 180L
         const val SUCCESS_CLOSE_DELAY_MS = 5000L
-        val BACKGROUND = Color.parseColor("#101114")
-        val SURFACE = Color.parseColor("#202126")
-        val ACCENT = Color.parseColor("#FF9B70")
-        val MUTED = Color.parseColor("#B9BBC4")
-        val SUCCESS = Color.parseColor("#8FE0B3")
+        // Obsidian Dawn palette.
+        val BACKGROUND = Color.parseColor("#10141A")
+        val SURFACE = Color.parseColor("#1C2026")
+        val ELEVATED = Color.parseColor("#262A31")
+        val HIGHEST = Color.parseColor("#31353C")
+        val LOWEST = Color.parseColor("#0A0E14")
+        val BORDER = Color.parseColor("#14FFFFFF")
+        val TEXT = Color.parseColor("#DFE2EB")
+        val SECONDARY = Color.parseColor("#DAC1B9")
+        val MUTED = Color.parseColor("#8B949E")
+        val ACCENT = Color.parseColor("#FF9E79")
+        val ON_ACCENT = Color.parseColor("#783316")
+        val PEACH = Color.parseColor("#FFC5B1")
+        val CYAN = Color.parseColor("#00F1FD")
+        val CYAN_DIM = Color.parseColor("#00DCE6")
+        val AMBER = Color.parseColor("#FF9F66")
+        val SUCCESS = CYAN
+        const val PILL = 100
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -170,7 +199,7 @@ class AlarmRingActivity : AppCompatActivity() {
 
     private fun buildScreen(label: String): FrameLayout {
         val frame = FrameLayout(this).apply { setBackgroundColor(BACKGROUND) }
-        val scroll = ScrollView(this).apply { isFillViewport = true }
+        val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -179,72 +208,227 @@ class AlarmRingActivity : AppCompatActivity() {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(24), dp(20), dp(28))
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(20), dp(8), dp(20), dp(32))
         }
         scroll.addView(column, ViewGroup.LayoutParams(-1, -2))
         frame.addView(scroll, ViewGroup.LayoutParams(-1, -1))
-        column.addView(text(if (practice) "PRACTICE · NO ALARM SCHEDULED" else "WAKEGUARD · A FRESH START", 12f, ACCENT))
-        column.addView(text(label, 24f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD }, fullWidth(10))
-        instructionCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(22), dp(22), dp(22))
-            background = rounded(SURFACE)
+        column.addView(labelText(if (practice) "PRACTICE • NO ALARM SCHEDULED" else "WAKEGUARD • A FRESH START", PEACH, 0.05f).apply {
+            background = rounded(Color.parseColor("#99262A31"), PILL)
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+            setCompoundDrawablesRelative(dot(PEACH, 6), null, null, null)
+            compoundDrawablePadding = dp(6)
+        }, LinearLayout.LayoutParams(-2, -2))
+        if (!practice) column.addView(text(label, 14f, SECONDARY).apply { setLeading(20f) }, fullWidth(8))
+        instruction = text("", 26f, TEXT).apply {
+            typeface = headlineFont
+            letterSpacing = -0.025f
+            setLeading(32f)
+            ViewCompat.setAccessibilityHeading(this, true)
         }
-        instruction = text("", 28f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD }
-        step = text("", 14f, MUTED)
-        hint = text("", 14f, MUTED)
-        status = text("", 14f, ACCENT).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 1000
-            progressTintList = ColorStateList.valueOf(ACCENT)
-            progressBackgroundTintList = ColorStateList.valueOf(Color.parseColor("#394046"))
+        column.addView(instruction, fullWidth(8))
+        step = text("", 13f, SECONDARY).apply { typeface = labelFont; letterSpacing = 0.02f; setLeading(18f) }
+        stepDots = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
+        val stepRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(step, LinearLayout.LayoutParams(-2, -2))
+            addView(stepDots, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        }
+        column.addView(stepRow, fullWidth(4))
+        instructionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            // Card fill plus the soft primary glow in its top-right corner.
+            background = LayerDrawable(arrayOf(rounded(SURFACE, 32), GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                colors = intArrayOf(Color.parseColor("#1FFFC5B1"), Color.TRANSPARENT)
+                gradientRadius = dp(96).toFloat()
+                setGradientCenter(0.96f, 0.06f)
+                cornerRadius = dp(32).toFloat()
+            }))
+            elevation = dp(4).toFloat()
+        }
+        instructionIcon = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = rounded(ELEVATED, PILL)
+            imageTintList = ColorStateList.valueOf(PEACH)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        instructionCard.addView(instruction)
-        instructionCard.addView(step, fullWidth(8))
-        instructionCard.addView(progress, LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(16) })
-        instructionCard.addView(hint, fullWidth(14))
-        instructionCard.addView(status, fullWidth(10))
-        column.addView(instructionCard, fullWidth(22))
+        instructionCard.addView(instructionIcon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val cardBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        instructionCard.addView(cardBody, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+        hint = text("", 14f, TEXT).apply { gravity = Gravity.START; setLeading(19.25f) }
+        status = labelText("", PEACH, 0.04f).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setCompoundDrawablesRelative(glyph(R.drawable.wg_ic_sun, PEACH, 16), null, null, null)
+            compoundDrawablePadding = dp(6)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 1000
+            progressDrawable = LayerDrawable(arrayOf(
+                rounded(HIGHEST, PILL),
+                ClipDrawable(rounded(ACCENT, PILL), Gravity.START, ClipDrawable.HORIZONTAL),
+            )).apply {
+                setId(0, android.R.id.background)
+                setId(1, android.R.id.progress)
+            }
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        cardBody.addView(hint, fullWidth())
+        cardBody.addView(status, fullWidth(10))
+        cardBody.addView(progress, LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(12) })
+        column.addView(instructionCard, fullWidth(16))
         preview = PreviewView(this).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             scaleType = PreviewView.ScaleType.FILL_CENTER
         }
-        previewContainer = FrameLayout(this).apply { background = rounded(Color.BLACK, 24); clipToOutline = true }
+        previewContainer = FrameLayout(this).apply {
+            background = rounded(LOWEST, 32)
+            clipToOutline = true
+            elevation = dp(8).toFloat()
+        }
         previewContainer.addView(preview, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(
+                Color.parseColor("#4D10141A"), Color.TRANSPARENT, Color.parseColor("#CC10141A")))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, FrameLayout.LayoutParams(-1, -1))
         guide = ChallengeGuideView(this)
         previewContainer.addView(guide, FrameLayout.LayoutParams(-1, -1))
-        previewBadge = text("", 12f, Color.WHITE).apply {
-            background = rounded(Color.parseColor("#CC101114"), 12)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+        previewBadge = labelText("", TEXT, 0.05f).apply {
+            background = rounded(Color.parseColor("#D90A0E14"), PILL)
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+            setCompoundDrawablesRelative(dot(CYAN, 8), null, null, null)
+            compoundDrawablePadding = dp(8)
+            elevation = dp(6).toFloat()
         }
-        previewContainer.addView(previewBadge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(14) })
-        val previewHeight = (resources.displayMetrics.widthPixels * 0.85f).toInt().coerceAtMost(dp(360))
-        column.addView(previewContainer, LinearLayout.LayoutParams(-1, previewHeight).apply { topMargin = dp(18) })
+        previewContainer.addView(previewBadge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
+        // Square viewfinder spanning the content width, as in the design.
+        val previewSize = (resources.displayMetrics.widthPixels - dp(40)).coerceIn(dp(200), dp(440))
+        column.addView(previewContainer, LinearLayout.LayoutParams(-1, previewSize).apply { topMargin = dp(16) })
         retryCamera = button("Retry camera") {
             cameraPermissionRequested = false
             openCamera(requestPermission = true)
         }
-        column.addView(retryCamera, fullWidth(12))
-        if ("tap" in escapes) {
-            column.addView(button(if (practice) "Finish practice" else "Stop alarm") { completeAlarm("tap") }.apply {
-                background = rounded(ACCENT); setTextColor(BACKGROUND)
-            }, fullWidth(16))
-        }
+        column.addView(retryCamera, LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(16) })
         val modes = Mode.entries.filter { it.key in escapes && (it != Mode.QR || qrValue.isNotBlank()) }
         if (modes.size > 1) {
-            column.addView(text("YOUR SELECTED CHALLENGES", 12f, MUTED), fullWidth(22))
-            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            modes.filter { it != Mode.TAP }.forEach { target ->
-                val control = button(target.title) { setMode(target) }
-                modeButtons[target] = control
-                row.addView(control, fullWidth(8))
+            val cameraModes = modes.filter { it != Mode.TAP }
+            val count = labelText("", CYAN_DIM, 0.04f)
+            activeCount = count
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), 0, dp(4), 0)
+                addView(labelText("YOUR SELECTED CHALLENGES", SECONDARY, 0.05f).apply { gravity = Gravity.START }, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(count, LinearLayout.LayoutParams(-2, -2))
             }
-            column.addView(row, fullWidth(0))
+            column.addView(header, fullWidth(16))
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
+            cameraModes.forEachIndexed { index, target ->
+                val control = modeRow(target)
+                modeButtons[target] = control
+                row.addView(control.root, LinearLayout.LayoutParams(-1, dp(56)).apply { if (index > 0) topMargin = dp(8) })
+            }
+            column.addView(row, fullWidth(8))
         }
-        column.addView(text("Camera challenges need a well-lit room. Turn on the room light; screen brightness stays unchanged.", 12f, MUTED), fullWidth(18))
-        if (practice) column.addView(button("Exit practice") { finishAndRemoveTask() }, fullWidth(14))
+        column.addView(text("Camera challenges need a well-lit room. Turn on the room light; screen brightness stays unchanged.", 12f, SECONDARY).apply {
+            setLeading(19.5f)
+            setPadding(dp(8), 0, dp(8), 0)
+        }, fullWidth(16))
+        if ("tap" in escapes) {
+            column.addView(iconButton(if (practice) "Finish practice" else "Stop alarm", R.drawable.wg_ic_task_alt, ACCENT, ON_ACCENT) { completeAlarm("tap") },
+                LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(24) })
+        }
+        if (practice) column.addView(iconButton("Exit practice", R.drawable.wg_ic_close, SURFACE, TEXT) { finishAndRemoveTask() },
+            LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(if ("tap" in escapes) 10 else 24) })
         return frame
+    }
+
+    private fun modeLabel(target: Mode) = when (target) {
+        Mode.FACE -> "Face Verification"
+        else -> target.title
+    }
+
+    private fun modeIcon(target: Mode) = when (target) {
+        Mode.FACE -> R.drawable.wg_ic_face
+        Mode.OBJECT -> R.drawable.wg_ic_focus
+        Mode.QR -> R.drawable.wg_ic_qr
+        Mode.TAP -> R.drawable.wg_ic_check_circle
+    }
+
+    private fun modeRow(target: Mode): ModeRow {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(56)
+            setPadding(dp(20), 0, dp(20), 0)
+            isClickable = true
+            isFocusable = true
+            asButton(this)
+            setOnClickListener { setMode(target) }
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(modeIcon(target))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        root.addView(icon, LinearLayout.LayoutParams(dp(24), dp(24)))
+        val title = text(modeLabel(target), 16f, TEXT).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            typeface = labelFont
+            letterSpacing = 0.01f
+            setLeading(22f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        root.addView(title, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12); marginEnd = dp(8) })
+        val badge = labelText(if (practice) "PRACTICING" else "ACTIVE", ON_ACCENT, 0.04f).apply {
+            background = rounded(Color.parseColor("#1A783316"), PILL)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setCompoundDrawablesRelative(null, null, glyph(R.drawable.wg_ic_check_circle, ON_ACCENT, 16), null)
+            compoundDrawablePadding = dp(6)
+        }
+        root.addView(badge, LinearLayout.LayoutParams(-2, -2))
+        val chevron = ImageView(this).apply {
+            setImageResource(R.drawable.wg_ic_chevron_right)
+            imageTintList = ColorStateList.valueOf(SECONDARY)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        root.addView(chevron, LinearLayout.LayoutParams(dp(20), dp(20)))
+        return ModeRow(root, icon, title, badge, chevron)
+    }
+
+    private fun styleModeRow(row: ModeRow, selected: Boolean) {
+        row.root.isSelected = selected
+        row.root.background = pill(if (selected) ACCENT else SURFACE, if (selected) ON_ACCENT else TEXT)
+        if (selected) glow(row.root) else row.root.elevation = dp(1).toFloat()
+        row.icon.imageTintList = ColorStateList.valueOf(if (selected) ON_ACCENT else SECONDARY)
+        row.title.setTextColor(if (selected) ON_ACCENT else TEXT)
+        row.badge.visibility = if (selected) View.VISIBLE else View.GONE
+        row.chevron.visibility = if (selected) View.GONE else View.VISIBLE
+    }
+
+    private fun renderStepDots() {
+        if (!::stepDots.isInitialized) return
+        stepDots.removeAllViews()
+        val show = mode == Mode.FACE && !cameraUnavailable && actions.size > 1
+        stepDots.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
+        actions.indices.forEach { index ->
+            val current = index == actionIndex.coerceAtMost(actions.size - 1)
+            val color = if (current) PEACH else HIGHEST
+            stepDots.addView(View(this).apply { background = rounded(color, PILL) },
+                LinearLayout.LayoutParams(dp(if (current) 16 else 6), dp(6)).apply { if (index > 0) marginStart = dp(4) })
+        }
     }
 
     private fun setMode(next: Mode, animate: Boolean = true) {
@@ -264,13 +448,11 @@ class AlarmRingActivity : AppCompatActivity() {
         // PreviewView mirrors the front camera automatically. An extra horizontal
         // flip would undo the mirror; recognition uses the original camera frames.
         preview.scaleX = 1f
-        previewBadge.text = when (next) { Mode.FACE -> "FRONT CAMERA · MIRROR VIEW"; Mode.OBJECT -> "REAR CAMERA · ${ObjectTargets.title(objectTarget).uppercase()}"; else -> "REAR CAMERA · QR SCAN" }
-        modeButtons.forEach { (target, control) ->
-            val selected = target == next
-            control.isSelected = selected
-            control.background = rounded(if (selected) ACCENT else SURFACE, 14)
-            control.setTextColor(if (selected) BACKGROUND else Color.WHITE)
-        }
+        previewBadge.text = when (next) { Mode.FACE -> "FRONT CAMERA • MIRROR VIEW"; Mode.OBJECT -> "REAR CAMERA • ${ObjectTargets.title(objectTarget).uppercase()}"; else -> "REAR CAMERA • QR SCAN" }
+        instructionIcon.setImageResource(modeIcon(next))
+        modeButtons.forEach { (target, control) -> styleModeRow(control, target == next) }
+        // Only the challenge being worked on right now is active; the others are alternatives.
+        activeCount?.text = "${modeButtons.keys.count { it == next }} Active"
         if (animate && ChallengeGuideView.motionAllowed(this)) {
             instructionCard.animate().cancel()
             instructionCard.alpha = 0.5f
@@ -285,8 +467,18 @@ class AlarmRingActivity : AppCompatActivity() {
     }
 
     private fun updateInstructions() {
+        renderStepDots()
         previewContainer.visibility = if (mode != Mode.TAP && !cameraUnavailable) View.VISIBLE else View.GONE
         retryCamera.visibility = if (mode != Mode.TAP && cameraUnavailable) View.VISIBLE else View.GONE
+        val currentAction = actions.getOrNull(actionIndex)
+        guide.arrow = if (mode != Mode.FACE || cameraUnavailable) 0 else when (currentAction) {
+            WakeAction.turnLeft -> -1
+            WakeAction.turnRight -> 1
+            else -> 0
+        }
+        // The design shows no bar for plain steps; keep it for timed holds and object tracking.
+        progress.visibility = if (!cameraUnavailable && (mode == Mode.OBJECT ||
+            (mode == Mode.FACE && currentAction == WakeAction.holdEyesOpen))) View.VISIBLE else View.GONE
         if (cameraUnavailable && mode != Mode.TAP) {
             guide.scanning = false
             instruction.text = "Camera unavailable"
@@ -554,28 +746,30 @@ class AlarmRingActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(24), dp(32), dp(24), dp(28))
-            background = rounded(SURFACE, 28)
-            addView(text(if (practice) "PRACTICE COMPLETE" else "WAKE CHECK COMPLETE", 12f, SUCCESS))
-            addView(text("✓", 48f, SUCCESS).apply {
-                background = rounded(Color.parseColor("#19382C"), 48)
+            background = rounded(SURFACE, 32)
+            addView(labelText(if (practice) "PRACTICE COMPLETE" else "WAKE CHECK COMPLETE", SUCCESS, 0.05f))
+            addView(ImageView(this@AlarmRingActivity).apply {
+                setImageResource(R.drawable.wg_ic_check_circle)
+                imageTintList = ColorStateList.valueOf(SUCCESS)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(20), dp(20), dp(20), dp(20))
+                background = rounded(Color.parseColor("#1F00F1FD"), PILL)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(dp(88), dp(88)).apply { topMargin = dp(24) })
-            addView(text(if (practice) "You did it!" else "You're ready", 30f, Color.WHITE).apply {
-                typeface = Typeface.DEFAULT_BOLD
+            addView(text(if (practice) "You did it!" else "You're ready", 30f, TEXT).apply {
+                typeface = headlineFont
+                letterSpacing = -0.02f
                 ViewCompat.setAccessibilityHeading(this, true)
             }, fullWidth(24))
-            addView(text(detail, 16f, MUTED), fullWidth(12))
+            addView(text(detail, 16f, SECONDARY), fullWidth(12))
             if (quote != null) {
-                addView(text("“$quote”", 18f, SUCCESS).apply {
+                addView(text("“$quote”", 17f, PEACH).apply {
                     setPadding(dp(18), dp(18), dp(18), dp(18))
-                    background = rounded(Color.parseColor("#19382C"), 16)
+                    background = rounded(ELEVATED, 24)
                     setLineSpacing(dp(4).toFloat(), 1f)
                 }, fullWidth(20))
             }
-            addView(button(if (practice) "Back to editor" else "Close") { finishAndRemoveTask() }.apply {
-                background = rounded(ACCENT, 16)
-                setTextColor(BACKGROUND)
-            }, fullWidth(28))
+            addView(primaryButton(if (practice) "Back to editor" else "Close") { finishAndRemoveTask() }, fullWidth(28))
             addView(countdownLabel, fullWidth(14))
         }
         content.addView(card, fullWidth())
@@ -616,15 +810,93 @@ class AlarmRingActivity : AppCompatActivity() {
     }
 
     private fun button(title: String, action: () -> Unit) = Button(this).apply {
-        text = title; isAllCaps = false; minimumHeight = dp(54)
-        setTextColor(Color.WHITE); background = rounded(SURFACE, 14)
-        setPadding(dp(16), dp(12), dp(16), dp(12))
+        text = title; isAllCaps = false; minimumHeight = dp(56); minHeight = dp(56)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        typeface = labelFont
+        letterSpacing = 0.01f
+        setTextColor(TEXT); background = pill(SURFACE, TEXT)
+        stateListAnimator = null
+        setPadding(dp(20), dp(12), dp(20), dp(12))
         setOnClickListener { action() }
     }
+    private fun primaryButton(title: String, action: () -> Unit) = button(title, action).apply {
+        background = pill(ACCENT, ON_ACCENT); setTextColor(ON_ACCENT)
+        glow(this)
+    }
+
+    /** Pill button with a leading icon hugging its centered label (design "Finish/Exit practice"). */
+    private fun iconButton(title: String, icon: Int, fill: Int, ink: Int, action: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+        minimumHeight = dp(56)
+        setPadding(dp(20), 0, dp(20), 0)
+        background = pill(fill, ink)
+        isClickable = true
+        isFocusable = true
+        contentDescription = title
+        asButton(this)
+        if (fill == ACCENT) glow(this) else elevation = dp(1).toFloat()
+        addView(ImageView(context).apply {
+            setImageResource(icon)
+            imageTintList = ColorStateList.valueOf(ink)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(20), dp(20)))
+        addView(text(title, 16f, ink).apply {
+            typeface = labelFont
+            letterSpacing = 0.01f
+            setLeading(22f)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        setOnClickListener { action() }
+    }
+
+    private fun asButton(view: View) = ViewCompat.setAccessibilityDelegate(view, object : AccessibilityDelegateCompat() {
+        override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+            super.onInitializeAccessibilityNodeInfo(host, info)
+            info.className = Button::class.java.name
+        }
+    })
+
+    /** Colored glow under coral fills: shadow-[0_8px_24px_-2px_rgba(255,158,121,0.25)]. */
+    private fun glow(view: View) {
+        view.elevation = dp(8).toFloat()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            view.outlineSpotShadowColor = ACCENT
+            view.outlineAmbientShadowColor = ACCENT
+        }
+    }
+
+    private fun pill(fill: Int, ink: Int) = RippleDrawable(
+        ColorStateList.valueOf((ink and 0x00FFFFFF) or 0x1F000000), rounded(fill, PILL), null)
+
     private fun text(value: String, size: Float, color: Int) = TextView(this).apply {
         text = value; setTextSize(TypedValue.COMPLEX_UNIT_SP, size); setTextColor(color); gravity = Gravity.CENTER
+        typeface = bodyFont
     }
-    private fun rounded(color: Int, radius: Int = 22) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+
+    /** label-sm: Inter 11sp semibold, 14sp line height. */
+    private fun labelText(value: String, color: Int, tracking: Float) = text(value, 11f, color).apply {
+        typeface = labelFont
+        letterSpacing = tracking
+        setLeading(14f)
+    }
+
+    private fun TextView.setLeading(sp: Float) = TextViewCompat.setLineHeight(this,
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, resources.displayMetrics).toInt())
+
+    private fun loadFont(res: Int, fallback: Typeface): Typeface =
+        runCatching { ResourcesCompat.getFont(this, res) }.getOrNull() ?: fallback
+
+    private fun rounded(color: Int, radius: Int = 24, stroke: Boolean = false) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(radius).toFloat()
+        if (stroke) setStroke(dp(1).coerceAtLeast(1), BORDER)
+    }
+    private fun dot(color: Int, size: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL; setColor(color); setBounds(0, 0, dp(size), dp(size))
+    }
+    private fun glyph(res: Int, color: Int, size: Int): Drawable? = ContextCompat.getDrawable(this, res)?.mutate()?.apply {
+        setTint(color); setBounds(0, 0, dp(size), dp(size))
+    }
     private fun fullWidth(top: Int = 0) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top) }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/brand.dart';
+import '../../shared/theme.dart';
+
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
 
@@ -41,20 +44,54 @@ class PrivacyPolicyScreen extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Privacy policy')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const SelectableText(url),
-        const SizedBox(height: 20),
-        for (final section in sections) ...[
-          Text(section.$1, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SelectableText(section.$2),
-          const SizedBox(height: 24),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = WakeTokens.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Privacy policy')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: ShapeDecoration(
+              color: tokens.subtle,
+              shape: StadiumBorder(side: BorderSide(color: tokens.ghostBorder)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.link, size: 18, color: tokens.cyan),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SelectableText(
+                    url,
+                    style: theme.textTheme.labelMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          for (final section in sections)
+            SurfaceCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(section.$1, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    section.$2,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }

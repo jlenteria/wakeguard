@@ -1,10 +1,14 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../../models/alarm.dart';
 import '../../platform/alarm_engine.dart';
 import 'alarm_editor_screen_view_model.dart';
 import '../challenges/qr_sheet.dart';
+import '../../shared/brand.dart';
 import '../../shared/choice_pill.dart';
+import '../../shared/theme.dart';
 import '../../shared/toast.dart';
 import 'package:provider/provider.dart';
 
@@ -72,100 +76,129 @@ class AlarmEditorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tokens = WakeTokens.of(context);
     // Use both insets; handling only the keyboard hides Save behind the nav bar.
     final media = MediaQuery.of(context);
     final bottomInset = media.viewPadding.bottom + media.viewInsets.bottom;
     return SizedBox(
       height: media.size.height * 0.85,
       child: ListView(
-        padding: EdgeInsets.fromLTRB(24, 8, 24, bottomInset + 24),
+        padding: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 40),
         children: [
+          _header(context),
+          const SizedBox(height: 4),
           Text(
-            viewModel.isExisting
-                ? 'Edit alarm'
-                : 'Make tomorrow morning easier',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 12),
-          if (viewModel.existing?.needsSetup == true) ...[
-            const Text(
-              'This alarm needs a supported challenge before it can be turned on. Choose a challenge below. For Find an object, practice scanning your chosen target first.',
+            'Make tomorrow morning easier',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              letterSpacing: -0.025 * 26,
             ),
-            const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Choose a preset or customize a fail-safe awakening routine to '
+            'beat morning fatigue.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.625,
+            ),
+          ),
+          if (viewModel.existing?.needsSetup == true) ...[
+            const SizedBox(height: 16),
+            _infoBox(
+              context,
+              Icons.warning_amber_rounded,
+              'This alarm needs a supported challenge before it can be turned on. Choose a challenge below. For Find an object, practice scanning your chosen target first.',
+              iconColor: tokens.amber,
+            ),
           ],
           _sectionTitle(
             context,
             'Quick setup',
-            help:
-                'Presets set the challenge, snooze and check-in. You can customise everything below.',
+            trailing: _badge(context, 'Fast presets', tokens.cyan),
           ),
-          _card(context, [
-            for (final (index, name, caption, icon) in _presets)
-              _optionTile(
-                context,
-                icon: icon,
-                title: name,
-                subtitle: caption,
-                selected: viewModel.preset == index,
-                trailing: Icon(
-                  viewModel.preset == index
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: viewModel.preset == index
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outline,
-                ),
-                onTap: () => viewModel.applyPreset(index),
-              ),
-          ]),
-          const SizedBox(height: 12),
+          _panel(
+            context,
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                for (final (index, name, caption, icon) in _presets) ...[
+                  if (index > 0) const SizedBox(height: 6),
+                  _presetTile(context, index, name, caption, icon),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
           _timeCard(context),
-          const SizedBox(height: 12),
+          const SizedBox(height: 24),
           _labelCard(context),
           _sectionTitle(
             context,
             'Ways to stop the alarm',
+            large: true,
             help:
-                'Only the selected challenges can stop this alarm. Choose Find an '
-                'object or QR and place the target outside the bedroom to get up.',
+                'Only active challenges can silence this alarm. Choose your '
+                'morning wake threshold.',
+            helpGap: 4,
+            helpHeight: 1.5,
           ),
-          _card(context, [
-            for (final escape in EscapeKind.values)
-              // The Face choice carries its own step setting, right under it.
-              if (escape == EscapeKind.face)
-                _faceChoice(context)
-              else
-                _optionTile(
-                  context,
-                  icon: _escapeIcon(escape),
-                  title: escape.label,
-                  subtitle: _escapeHint(escape),
-                  selected: viewModel.escapes.contains(escape),
-                  trailing: Switch(
-                    value: viewModel.escapes.contains(escape),
-                    onChanged: (selected) =>
-                        viewModel.toggleEscape(escape, selected),
-                  ),
-                  onTap: () => viewModel.toggleEscape(
-                    escape,
-                    !viewModel.escapes.contains(escape),
-                  ),
-                ),
-          ]),
+          _panel(
+            context,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final escape in EscapeKind.values) ...[
+                  if (escape.index > 0) ...[
+                    const SizedBox(height: 16),
+                    _rule(context),
+                    const SizedBox(height: 16),
+                  ],
+                  // The Face choice carries its own step setting, right under it.
+                  if (escape == EscapeKind.face)
+                    _faceChoice(context)
+                  else
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: escape == EscapeKind.tap ? 12 : 0,
+                      ),
+                      child: _optionTile(
+                        context,
+                        icon: _escapeIcon(escape),
+                        title: _escapeTitle(escape),
+                        subtitle: _escapeHint(escape),
+                        selected: viewModel.escapes.contains(escape),
+                        trailing: Switch(
+                          value: viewModel.escapes.contains(escape),
+                          onChanged: (selected) =>
+                              viewModel.toggleEscape(escape, selected),
+                        ),
+                        onTap: () => viewModel.toggleEscape(
+                          escape,
+                          !viewModel.escapes.contains(escape),
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
           if (viewModel.validationError != null)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
               child: Text(
                 viewModel.validationError!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.error,
                   fontSize: 13,
                 ),
               ),
             ),
           // Only when QR is on: an unused code field is one more thing to misread at 05:00.
           if (viewModel.showQrField) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _card(context, [
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -183,6 +216,7 @@ class AlarmEditorScreen extends StatelessWidget {
                             : viewModel.usesSharedQr
                             ? 'Your shared wake-up QR. Print once for all alarms using it.'
                             : 'Custom code for this alarm. Existing printed codes still work.',
+                        helperMaxLines: 3,
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.qr_code_2_outlined),
                           tooltip: 'Generate a custom code for this alarm',
@@ -214,51 +248,45 @@ class AlarmEditorScreen extends StatelessWidget {
               ),
             ]),
           ],
-          _sectionTitle(context, 'Repeat'),
-          _card(context, [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(value: 0, label: Text('Once')),
-                        ButtonSegment(value: 1, label: Text('Every day')),
-                        ButtonSegment(value: 2, label: Text('Custom')),
-                      ],
-                      selected: {
-                        if (!viewModel.repeatDaily)
-                          0
-                        else if (viewModel.weekdays.isEmpty)
-                          1
-                        else
-                          2,
-                      },
-                      onSelectionChanged: (value) {
-                        switch (value.first) {
-                          case 0:
-                            viewModel.selectOnce();
-                          case 1:
-                            viewModel.selectEveryDay();
-                          default:
-                            viewModel.selectSelectedDays();
-                        }
-                      },
+          _sectionTitle(context, 'Repeat', gap: 10),
+          _panel(
+            context,
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                _segmented<int>(
+                  context,
+                  verticalPadding: 10,
+                  options: const [(0, 'Once'), (1, 'Every day'), (2, 'Custom')],
+                  selected: !viewModel.repeatDaily
+                      ? 0
+                      : viewModel.weekdays.isEmpty
+                      ? 1
+                      : 2,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 0:
+                        viewModel.selectOnce();
+                      case 1:
+                        viewModel.selectEveryDay();
+                      default:
+                        viewModel.selectSelectedDays();
+                    }
+                  },
+                ),
+                if (viewModel.repeatDaily && viewModel.weekdays.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
+                    child: _dayPicker(context),
                   ),
-                  if (viewModel.repeatDaily &&
-                      viewModel.weekdays.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _dayPicker(context),
-                  ],
                 ],
-              ),
+              ],
             ),
-          ]),
+          ),
           if (viewModel.escapes.contains(EscapeKind.object)) ...[
             _sectionTitle(context, 'Your wake-up object'),
             _card(context, [
@@ -301,86 +329,143 @@ class AlarmEditorScreen extends StatelessWidget {
             ]),
           ],
           const SizedBox(height: 24),
-          _card(context, [
-            ListTile(
-              leading: _iconBadge(context, Icons.music_note_outlined, false),
-              title: const Text('Sound'),
-              subtitle: Text(
-                '${viewModel.hasCustomSound ? viewModel.customSoundName : 'Default alarm sound'}'
-                ' · Vibration ${viewModel.vibrate ? 'on' : 'off'}',
+          _panel(
+            context,
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(14),
+              minVerticalPadding: 0,
+              minTileHeight: 44,
+              horizontalTitleGap: 14,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(32),
+              ),
+              leading: _well(
+                context,
+                Icons.music_note_outlined,
+                color: _cyanDim(context),
+              ),
+              title: Text(
+                'Sound',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge,
               ),
-              trailing: const Icon(Icons.chevron_right),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '${viewModel.hasCustomSound ? viewModel.customSoundName : 'Default alarm sound'}'
+                  ' · Vibration ${viewModel.vibrate ? 'on' : 'off'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                size: 22,
+                color: scheme.onSurfaceVariant,
+              ),
               onTap: viewModel.saving ? null : () => _openSoundPage(context),
             ),
-          ]),
+          ),
           _sectionTitle(
             context,
-            'Snooze',
+            'Snooze duration',
             help:
-                'How long this alarm can be put off. "No snooze" hides the '
-                'snooze button entirely, so the alarm only ends when you stop it.',
+                'How long alarm pauses. "No snooze" locks out excuses until '
+                'solved.',
+            gap: 10,
           ),
-          _card(context, [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: _pillGrid([
-                for (final minutes in _snoozeChoices)
-                  ChoicePill(
-                    label: minutes == 0 ? 'No snooze' : '$minutes min',
-                    icon: minutes == 0 ? Icons.block : Icons.snooze,
-                    selected: viewModel.snoozeMinutes == minutes,
-                    onTap: () => viewModel.setSnoozeMinutes(minutes),
-                  ),
-              ]),
-            ),
+          _pillGrid([
+            for (final minutes in _snoozeChoices)
+              ChoicePill(
+                label: minutes == 0 ? 'No snooze' : '$minutes min',
+                icon: minutes == 0 ? Icons.block : Icons.snooze,
+                selected: viewModel.snoozeMinutes == minutes,
+                onTap: () => viewModel.setSnoozeMinutes(minutes),
+              ),
           ]),
           if (viewModel.canCheckIn) ...[
             _sectionTitle(
               context,
               'Stay Awake check-in',
-              help:
-                  "After you stop the alarm, a reminder asks if you’re still up. Tap ‘I'm up’ within 1 minute to avoid another alarm. This is off unless you turn it on.",
-            ),
-            _card(context, [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: _pillGrid([
-                  for (final minutes in [0, 3, 5, 10])
-                    ChoicePill(
-                      label: minutes == 0 ? 'Off' : '$minutes min',
-                      icon: minutes == 0
-                          ? Icons.notifications_off_outlined
-                          : Icons.notifications_active_outlined,
-                      selected: viewModel.checkInMinutes == minutes,
-                      onTap: () => viewModel.setCheckInMinutes(minutes),
-                    ),
-                ]),
+              titleIcon: Icon(
+                Icons.verified_outlined,
+                size: 18,
+                color: _cyanDim(context),
               ),
-            ]),
+              help:
+                  'A push prompt tests your alertness shortly after shutdown. '
+                  'Unresponsive check-ins trigger full emergency ringing.',
+              helpHeight: 1.375,
+              gap: 10,
+            ),
+            _panel(
+              context,
+              padding: const EdgeInsets.all(8),
+              child: _pillRow([
+                for (final minutes in [0, 3, 5, 10])
+                  ChoicePill(
+                    label: minutes == 0 ? 'Off' : '$minutes min',
+                    style: ChoicePillStyle.segment,
+                    selected: viewModel.checkInMinutes == minutes,
+                    onTap: () => viewModel.setCheckInMinutes(minutes),
+                  ),
+              ]),
+            ),
           ],
-          if (viewModel.engine != null && viewModel.canPractice)
+          if (viewModel.engine != null && viewModel.canPractice) ...[
+            const SizedBox(height: 28),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  foregroundColor: _cyanDim(context),
+                  backgroundColor: scheme.surfaceContainerHigh,
+                  minimumSize: const Size(0, 52),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  iconSize: 20,
+                  textStyle: theme.textTheme.labelLarge,
+                ),
                 onPressed: viewModel.practicing || viewModel.saving
                     ? null
                     : () => _practice(context),
-                icon: const Icon(Icons.play_circle_outline),
+                icon: const Icon(Icons.science_outlined),
                 label: Text(
                   viewModel.practicing
                       ? 'Starting practice…'
                       : 'Practice this challenge — no alarm scheduled',
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: viewModel.saving || viewModel.practicing
-                ? null
-                : () => _save(context),
-            child: Text(viewModel.saving ? 'Saving…' : 'Save alarm'),
+          ],
+          const SizedBox(height: 36),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 58),
+                elevation: 10,
+                shadowColor: Colors.black.withValues(
+                  alpha: theme.brightness == Brightness.light ? 0.2 : 0.5,
+                ),
+                iconSize: 22,
+                textStyle: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              onPressed: viewModel.saving || viewModel.practicing
+                  ? null
+                  : () => _save(context),
+              icon: const Icon(Icons.alarm_on_outlined),
+              label: Text(viewModel.saving ? 'Saving…' : 'Save alarm'),
+            ),
           ),
         ],
       ),
@@ -393,8 +478,7 @@ class AlarmEditorScreen extends StatelessWidget {
     (
       2,
       'Get out of bed',
-      'Find an object or scan a QR code away from bed, no snooze, with a '
-          'check-in.',
+      'Scan object away from bed, no snooze.',
       Icons.directions_walk,
     ),
   ];
@@ -412,93 +496,490 @@ class AlarmEditorScreen extends StatelessWidget {
 
   static IconData _escapeIcon(EscapeKind escape) => switch (escape) {
     EscapeKind.tap => Icons.touch_app_outlined,
-    EscapeKind.face => Icons.face_retouching_natural_outlined,
-    EscapeKind.object => Icons.center_focus_strong_outlined,
+    EscapeKind.face => Icons.face_outlined,
+    EscapeKind.object => Icons.filter_center_focus,
     EscapeKind.qr => Icons.qr_code_scanner,
+  };
+
+  static String _escapeTitle(EscapeKind escape) => switch (escape) {
+    EscapeKind.face => 'Face check',
+    _ => escape.label,
   };
 
   static String _escapeHint(EscapeKind escape) => switch (escape) {
     EscapeKind.tap => 'Just tap the stop button. The easiest way.',
     EscapeKind.face => 'Show your face to the front camera.',
-    EscapeKind.object => 'Find and scan a chosen object away from bed.',
-    EscapeKind.qr => 'Scan a printed or on-screen code away from bed.',
+    EscapeKind.object => 'Find and scan a chosen household item.',
+    EscapeKind.qr => 'Scan a code placed away from your bed.',
   };
 
-  /// The alarm time as a big tappable card, with a clear "tap to change" cue.
+  /// secondary-fixed-dim in dark; the scheme's deeper cyan in light.
+  static Color _cyanDim(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.brightness == Brightness.light
+        ? theme.colorScheme.secondary
+        : const Color(0xff00dce6);
+  }
+
+  /// Back arrow, the mark and whether this is a new or an existing alarm.
+  Widget _header(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SizedBox(
+      height: 64,
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            iconSize: 20,
+            tooltip: 'Close',
+            style: IconButton.styleFrom(
+              fixedSize: const Size(44, 44),
+              minimumSize: const Size(44, 44),
+              backgroundColor: scheme.surfaceContainerHigh.withValues(
+                alpha: 0.6,
+              ),
+              foregroundColor: scheme.onSurface,
+            ),
+            // Closing returns nothing, exactly like dragging the sheet away.
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          const SizedBox(width: 8),
+          const WakeGuardLogo(size: 28),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              viewModel.isExisting ? 'Edit Alarm' : 'New alarm',
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                letterSpacing: -0.025 * 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A small caps badge, e.g. "FAST PRESETS" beside a section title.
+  Widget _badge(BuildContext context, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: ShapeDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        shape: const StadiumBorder(),
+      ),
+      child: Text(
+        text.toUpperCase(),
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          letterSpacing: 0.05 * 11,
+        ),
+      ),
+    );
+  }
+
+  /// A radio-like circle that turns into a coral check when chosen.
+  Widget _radioMark(BuildContext context, bool selected) {
+    final scheme = Theme.of(context).colorScheme;
+    final tokens = WakeTokens.of(context);
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? tokens.cta : scheme.surfaceContainerHighest,
+      ),
+      child: selected ? Icon(Icons.check, size: 16, color: tokens.onCta) : null,
+    );
+  }
+
+  /// One Quick setup row: a fixed-accent icon well, name, caption and radio.
+  Widget _presetTile(
+    BuildContext context,
+    int index,
+    String name,
+    String caption,
+    IconData icon,
+  ) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tokens = WakeTokens.of(context);
+    final selected = viewModel.preset == index;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(32),
+    );
+    final well = switch (index) {
+      1 => _well(
+        context,
+        icon,
+        color: accentOf(context),
+        background: tokens.cta.withValues(alpha: 0.2),
+      ),
+      2 => _well(context, icon, color: _cyanDim(context)),
+      _ => _well(context, icon),
+    };
+    // The chosen row is lifted by its own fill; the tile itself stays untinted.
+    return Material(
+      color: selected
+          ? scheme.surfaceContainerHigh.withValues(alpha: 0.8)
+          : Colors.transparent,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        selected: selected,
+        selectedColor: scheme.onSurface,
+        selectedTileColor: Colors.transparent,
+        shape: shape,
+        contentPadding: const EdgeInsets.all(14),
+        minVerticalPadding: 0,
+        minTileHeight: 44,
+        horizontalTitleGap: 14,
+        leading: well,
+        title: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelLarge,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        trailing: _radioMark(context, selected),
+        onTap: () => viewModel.applyPreset(index),
+      ),
+    );
+  }
+
+  /// A circular icon well: surface-container-high with a muted icon by default.
+  Widget _well(
+    BuildContext context,
+    IconData icon, {
+    Color? color,
+    Color? background,
+    double size = 44,
+    double iconSize = 22,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: background ?? scheme.surfaceContainerHigh,
+      ),
+      child: Icon(
+        icon,
+        size: iconSize,
+        color: color ?? scheme.onSurfaceVariant,
+      ),
+    );
+  }
+
+  /// The design's borderless rounded-lg (32) surface-container panel.
+  Widget _panel(
+    BuildContext context, {
+    required Widget child,
+    EdgeInsetsGeometry padding = EdgeInsets.zero,
+  }) {
+    final light = Theme.of(context).brightness == Brightness.light;
+    return SurfaceCard(
+      radius: 32,
+      padding: padding,
+      // Dark panels are borderless; light keeps the ghost edge on white.
+      borderColor: light ? null : Colors.transparent,
+      child: child,
+    );
+  }
+
+  /// A 1px surface-container-highest rule between challenge rows.
+  Widget _rule(BuildContext context) => Container(
+    height: 1,
+    color: Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+  );
+
+  /// A pill track of equal segments; the chosen one is raised in coral text.
+  Widget _segmented<T>(
+    BuildContext context, {
+    required List<(T, String)> options,
+    required T selected,
+    required ValueChanged<T> onSelected,
+    double verticalPadding = 8,
+  }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final light = theme.brightness == Brightness.light;
+    const shape = StadiumBorder();
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: ShapeDecoration(
+        color: scheme.surfaceContainerHigh,
+        shape: shape,
+      ),
+      child: Row(
+        children: [
+          for (final (i, (value, label)) in options.indexed) ...[
+            if (i > 0) const SizedBox(width: 4),
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: value == selected,
+                inMutuallyExclusiveGroup: true,
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    shape: shape,
+                    shadows: value == selected
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Material(
+                    color: value == selected
+                        ? (light ? scheme.surface : scheme.surfaceContainer)
+                        : Colors.transparent,
+                    shape: shape,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      customBorder: shape,
+                      onTap: () => onSelected(value),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: verticalPadding,
+                        ),
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: value == selected
+                                ? accentOf(context)
+                                : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// "Ringing in 7 hours 42 minutes", counted in clock minutes from now.
+  String _ringingIn() {
+    final now = DateTime.now();
+    final draft = Alarm(
+      id: '',
+      hour: viewModel.time.hour,
+      minute: viewModel.time.minute,
+      label: '',
+      repeatDaily: viewModel.repeatDaily,
+      weekdays: viewModel.repeatDaily ? viewModel.weekdays : const {},
+    );
+    DateTime minuteOf(DateTime t) =>
+        DateTime(t.year, t.month, t.day, t.hour, t.minute);
+    final minutes = minuteOf(
+      draft.nextOccurrence(now),
+    ).difference(minuteOf(now)).inMinutes;
+    if (minutes <= 0) return 'Ringing in under a minute';
+    String unit(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
+    final days = minutes ~/ (24 * 60);
+    final hours = (minutes % (24 * 60)) ~/ 60;
+    final mins = minutes % 60;
+    return 'Ringing in ${[
+      if (days > 0) unit(days, 'day'),
+      if (hours > 0) unit(hours, 'hour'),
+      if (days == 0 && mins > 0) unit(mins, 'minute'),
+    ].join(' ')}';
+  }
+
+  /// The alarm time as a big tappable hero card, with a clear "tap to change" cue.
   Widget _timeCard(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final tokens = WakeTokens.of(context);
+    final accent = accentOf(context);
+    final localizations = MaterialLocalizations.of(context);
     final time = viewModel.time.format(context);
+    final use24 = MediaQuery.alwaysUse24HourFormatOf(context);
+    final clock = use24
+        ? localizations.formatTimeOfDay(
+            viewModel.time,
+            alwaysUse24HourFormat: true,
+          )
+        : '${localizations.formatHour(viewModel.time)}:'
+              '${localizations.formatMinute(viewModel.time)}';
+    final period = use24
+        ? null
+        : viewModel.time.period == DayPeriod.am
+        ? localizations.anteMeridiemAbbreviation
+        : localizations.postMeridiemAbbreviation;
+    final cyanDim = _cyanDim(context);
+    final light = theme.brightness == Brightness.light;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(32),
+      side: light ? BorderSide(color: tokens.ghostBorder) : BorderSide.none,
+    );
+    // The two soft corner glows: dawn at top right, cyan at bottom left.
+    Widget glow(Color color) => ImageFiltered(
+      imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+      child: Container(
+        width: 128,
+        height: 128,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.1),
+        ),
+      ),
+    );
     return Semantics(
       button: true,
       label: 'Alarm time $time. Tap to change.',
       child: ExcludeSemantics(
-        child: Card(
-          margin: EdgeInsets.zero,
-          elevation: 2,
-          shadowColor: Colors.black.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: shape,
+            shadows: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: light ? 0.06 : 0.25),
+                blurRadius: 15,
+                spreadRadius: -3,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: viewModel.saving
-                ? null
-                : () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: viewModel.time,
-                    );
-                    if (picked != null) viewModel.setTime(picked);
-                  },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-              child: Column(
+          child: Material(
+            color: light ? scheme.surfaceContainerLow : scheme.surfaceContainer,
+            shape: shape,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: viewModel.saving
+                  ? null
+                  : () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: viewModel.time,
+                      );
+                      if (picked != null) viewModel.setTime(picked);
+                    },
+              child: Stack(
                 children: [
-                  Text(
-                    'Alarm time',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Shrinks instead of wrapping when the phone's text size is huge.
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      time,
-                      style: theme.textTheme.displayMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // The pill is the "this is tappable" signal.
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  Positioned(top: -48, right: -48, child: glow(tokens.dawn)),
+                  Positioned(bottom: -48, left: -48, child: glow(tokens.cyan)),
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(
-                          Icons.edit_outlined,
-                          size: 18,
-                          color: scheme.onPrimaryContainer,
+                        Text(
+                          'ALARM TIME',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            letterSpacing: 0.05 * 11,
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Tap to change time',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: scheme.onPrimaryContainer,
-                              fontWeight: FontWeight.w600,
+                        const SizedBox(height: 8),
+                        // Shrinks instead of wrapping when the text size is huge.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                clock,
+                                style: theme.textTheme.displayMedium?.copyWith(
+                                  letterSpacing: -0.05 * 56,
+                                  fontFeatures: WakeTheme.tabular,
+                                ),
+                              ),
+                              if (period != null) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  period,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: accent,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.bedtime_outlined,
+                              size: 15,
+                              color: cyanDim,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _ringingIn(),
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cyanDim,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // The pill is the "this is tappable" signal.
+                        Center(
+                          child: Container(
+                            // 13 + 18 + 13: the design's 44px-high pill.
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 13,
+                            ),
+                            decoration: ShapeDecoration(
+                              color: scheme.surfaceContainerHigh,
+                              shape: const StadiumBorder(),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.edit_outlined,
+                                  size: 18,
+                                  color: accent,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    'Tap to change time',
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(color: scheme.onSurface),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -514,24 +995,39 @@ class AlarmEditorScreen extends StatelessWidget {
     );
   }
 
-  /// The label as a card with an icon and a hint, instead of a bare underline.
+  /// The label as a card with an icon and a caption, instead of a bare underline.
   Widget _labelCard(BuildContext context) {
-    return _card(context, [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: Row(
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    return _panel(
+      context,
+      padding: const EdgeInsets.all(14),
+      child: Row(
           children: [
-            _iconBadge(context, Icons.label_outline, false),
-            const SizedBox(width: 16),
+            _well(context, Icons.label_outline, iconSize: 20),
+            const SizedBox(width: 12),
             Expanded(
               child: TextField(
                 controller: viewModel.labelController,
                 onTapOutside: (_) =>
                     FocusManager.instance.primaryFocus?.unfocus(),
                 textCapitalization: TextCapitalization.sentences,
+                style: theme.textTheme.titleMedium,
                 decoration: InputDecoration(
                   labelText: 'Label',
                   hintText: 'Wake up',
+                  hintStyle: theme.textTheme.titleMedium?.copyWith(
+                    color: scheme.outlineVariant,
+                  ),
+                  filled: false,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                  labelStyle: labelStyle,
+                  floatingLabelStyle: labelStyle,
                   // No outline at rest; a clear rounded ring once it is focused.
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -544,31 +1040,38 @@ class AlarmEditorScreen extends StatelessWidget {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: accentOf(context),
                       width: 2,
                     ),
                   ),
                 ),
               ),
             ),
+            const SizedBox(width: 12),
+            ExcludeSemantics(
+              child: Icon(
+                Icons.edit_note,
+                size: 20,
+                color: scheme.outlineVariant,
+              ),
+            ),
           ],
-        ),
       ),
-    ]);
+    );
   }
 
   /// Lays tiles out in two even columns, like the phone's own settings pages.
   Widget _pillGrid(List<Widget> pills) {
     final rows = <Widget>[];
     for (var i = 0; i < pills.length; i += 2) {
-      if (i > 0) rows.add(const SizedBox(height: 8));
+      if (i > 0) rows.add(const SizedBox(height: 10));
       rows.add(
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: pills[i]),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: i + 1 < pills.length ? pills[i + 1] : const SizedBox(),
               ),
@@ -580,53 +1083,107 @@ class AlarmEditorScreen extends StatelessWidget {
     return Column(children: rows);
   }
 
+  /// Short choices side by side in one even row, like a segmented pill.
+  Widget _pillRow(List<Widget> pills) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < pills.length; i++) ...[
+            if (i > 0) const SizedBox(width: 6),
+            Expanded(child: pills[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// A soft tinted note with an icon, for explanations and status.
   Widget _infoBox(
     BuildContext context,
     IconData icon,
     String text, {
     bool positive = false,
+    Color? iconColor,
   }) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final tokens = WakeTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: positive
-            ? scheme.primaryContainer.withValues(alpha: 0.6)
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        color: positive ? tokens.cyan.withValues(alpha: 0.10) : tokens.subtle,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: tokens.ghostBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: positive ? scheme.primary : null),
+          Icon(
+            icon,
+            size: 20,
+            color:
+                iconColor ??
+                (positive ? tokens.cyan : theme.colorScheme.onSurfaceVariant),
+          ),
           const SizedBox(width: 10),
-          Expanded(child: Text(text)),
+          Expanded(child: Text(text, style: theme.textTheme.bodySmall)),
         ],
       ),
     );
   }
 
-  /// A bold heading with optional help text, above a card.
-  Widget _sectionTitle(BuildContext context, String title, {String? help}) {
+  /// A section heading (label-lg, or headline-sm when [large]) with optional
+  /// help text, an inline icon and a trailing badge, above its content.
+  Widget _sectionTitle(
+    BuildContext context,
+    String title, {
+    String? help,
+    Widget? trailing,
+    Widget? titleIcon,
+    bool large = false,
+    double gap = 12,
+    double helpGap = 2,
+    double? helpHeight,
+  }) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+      padding: EdgeInsets.only(top: 24, bottom: gap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: large
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.labelLarge,
+                    ),
+                  ),
+                  if (titleIcon != null) ...[
+                    const SizedBox(width: 8),
+                    titleIcon,
+                  ],
+                ],
+              ),
+              ?trailing,
+            ],
           ),
           if (help != null) ...[
-            const SizedBox(height: 4),
+            SizedBox(height: helpGap),
             Text(
               help,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
+                height: helpHeight,
               ),
             ),
           ],
@@ -635,48 +1192,48 @@ class AlarmEditorScreen extends StatelessWidget {
     );
   }
 
-  /// White rounded card with a soft shadow; rows get thin dividers.
-  Widget _card(BuildContext context, List<Widget> rows) {
+  /// A rounded panel card; rows get thin dividers.
+  Widget _card(BuildContext context, List<Widget> rows, {double indent = 76}) {
     final children = <Widget>[];
     for (var i = 0; i < rows.length; i++) {
       if (i > 0) {
-        children.add(const Divider(height: 1, indent: 72, endIndent: 16));
+        children.add(Divider(height: 1, indent: indent, endIndent: 16));
       }
       children.add(rows[i]);
     }
-    // The app's standard Card colour, so every card looks the same.
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 2,
-      shadowColor: Colors.black.withValues(alpha: 0.2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
+    return _panel(
+      context,
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(children: children),
     );
   }
 
-  Widget _iconBadge(BuildContext context, IconData icon, bool selected) {
-    final scheme = Theme.of(context).colorScheme;
-    return CircleAvatar(
-      backgroundColor: selected
-          ? scheme.primary
-          : scheme.surfaceContainerHighest,
-      foregroundColor: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-      child: Icon(icon, size: 22),
+  /// Circular icon well: coral-tinted while its row is on.
+  Widget _iconWell(BuildContext context, IconData icon, bool selected) {
+    return _well(
+      context,
+      icon,
+      color: selected ? accentOf(context) : null,
+      background: selected
+          ? WakeTokens.of(context).cta.withValues(alpha: 0.2)
+          : null,
     );
   }
 
   /// The Face row with its step setting tucked underneath when it is on.
   Widget _faceChoice(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final enabled = viewModel.escapes.contains(EscapeKind.face);
+    final steps = viewModel.difficulty.stepCount;
+    final small = theme.textTheme.labelSmall;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _optionTile(
           context,
           icon: _escapeIcon(EscapeKind.face),
-          title: EscapeKind.face.label,
+          title: _escapeTitle(EscapeKind.face),
           subtitle: _escapeHint(EscapeKind.face),
           selected: enabled,
           trailing: Switch(
@@ -686,41 +1243,51 @@ class AlarmEditorScreen extends StatelessWidget {
           ),
           onTap: () => viewModel.toggleEscape(EscapeKind.face, !enabled),
         ),
-        if (enabled)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        if (enabled) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.brightness == Brightness.light
+                  ? scheme.surfaceContainer
+                  : scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(32),
+            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Face challenge steps',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurfaceVariant,
-                  ),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'Face challenge steps',
+                      style: small?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                    Text(
+                      '$steps ${steps == 1 ? 'step' : 'steps'} required',
+                      style: small?.copyWith(color: accentOf(context)),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<ChallengeDifficulty>(
-                    showSelectedIcon: false,
-                    segments: [
-                      for (final difficulty in ChallengeDifficulty.values)
-                        ButtonSegment(
-                          value: difficulty,
-                          label: Text(
-                            '${difficulty.label} (${difficulty.stepCount})',
-                          ),
-                        ),
-                    ],
-                    selected: {viewModel.difficulty},
-                    onSelectionChanged: (value) =>
-                        viewModel.setDifficulty(value.first),
-                  ),
+                _segmented<ChallengeDifficulty>(
+                  context,
+                  options: [
+                    for (final difficulty in ChallengeDifficulty.values)
+                      (
+                        difficulty,
+                        '${difficulty.label} (${difficulty.stepCount})',
+                      ),
+                  ],
+                  selected: viewModel.difficulty,
+                  onSelected: viewModel.setDifficulty,
                 ),
               ],
             ),
           ),
+        ],
       ],
     );
   }
@@ -734,16 +1301,31 @@ class AlarmEditorScreen extends StatelessWidget {
     required Widget trailing,
     required VoidCallback onTap,
   }) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return ListTile(
-      // Selection is shown by the badge and the check/switch only: no tinted
+      // Selection is shown by the well and the check/switch only: no tinted
       // row background, so the card keeps one even colour.
       selected: selected,
       selectedColor: scheme.onSurface,
       selectedTileColor: Colors.transparent,
-      leading: _iconBadge(context, icon, selected),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle),
+      contentPadding: EdgeInsets.zero,
+      minVerticalPadding: 0,
+      minTileHeight: 44,
+      horizontalTitleGap: 14,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      leading: _iconWell(context, icon, selected),
+      title: Text(title, style: theme.textTheme.labelLarge),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            height: 1.375,
+          ),
+        ),
+      ),
       trailing: trailing,
       onTap: onTap,
     );
@@ -751,12 +1333,14 @@ class AlarmEditorScreen extends StatelessWidget {
 
   /// Seven round day buttons that always fit the row, whatever the width.
   Widget _dayPicker(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tokens = WakeTokens.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 6.0;
+        const gap = 4.0;
         final size = ((constraints.maxWidth - gap * 6) / 7)
-            .clamp(30.0, 46.0)
+            .clamp(28.0, 36.0)
             .toDouble();
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -769,8 +1353,8 @@ class AlarmEditorScreen extends StatelessWidget {
                 child: ExcludeSemantics(
                   child: Material(
                     color: viewModel.weekdays.contains(day)
-                        ? scheme.primary
-                        : scheme.surfaceContainerHighest,
+                        ? tokens.cta
+                        : scheme.surfaceContainerHigh,
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
@@ -784,11 +1368,10 @@ class AlarmEditorScreen extends StatelessWidget {
                         child: Center(
                           child: Text(
                             _weekdayLetters[day - 1],
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
+                            style: theme.textTheme.labelSmall?.copyWith(
                               color: viewModel.weekdays.contains(day)
-                                  ? scheme.onPrimary
-                                  : scheme.onSurface,
+                                  ? tokens.onCta
+                                  : scheme.onSurfaceVariant,
                             ),
                           ),
                         ),
@@ -959,31 +1542,18 @@ class AlarmEditorScreen extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         text.toUpperCase(),
-        style: theme.textTheme.bodyMedium?.copyWith(
+        style: theme.textTheme.labelSmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
         ),
       ),
     );
   }
 
-  /// The app's standard Card with thin dividers between its rows.
-  Widget _toneCard(BuildContext context, List<Widget> rows) {
-    final children = <Widget>[];
-    for (var i = 0; i < rows.length; i++) {
-      if (i > 0) {
-        children.add(const Divider(height: 1, indent: 16, endIndent: 16));
-      }
-      children.add(rows[i]);
-    }
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 2,
-      shadowColor: Colors.black.withValues(alpha: 0.2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
-    );
-  }
+  /// The editor's standard card with thin dividers between its rows.
+  Widget _toneCard(BuildContext context, List<Widget> rows) =>
+      _card(context, rows, indent: 16);
 
   /// A name on the left and a radio on the right; tapping anywhere selects it.
   Widget _toneRow(

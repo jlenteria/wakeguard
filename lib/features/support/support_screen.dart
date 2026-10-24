@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/brand.dart';
+
 /// Where users can support the project straight from their wallet.
 ///
 /// The QR is [qrAsset].
@@ -15,48 +17,59 @@ class SupportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+    final muted = theme.colorScheme.onSurfaceVariant;
     return Scaffold(
       appBar: AppBar(title: const Text('Support WakeGuard')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          Center(
+            child: IconWell(
+              icon: Icons.favorite_border,
+              color: accentOf(context),
+              size: 64,
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
             'WakeGuard is free, with no ads and no accounts. Every feature is '
             'available to everyone. If you would like to, you can send an '
             'optional, voluntary tip directly to the developer. It unlocks '
             'nothing and gives no rewards.',
-            style: text.bodyMedium,
+            textAlign: TextAlign.center,
+            style: text.bodyMedium?.copyWith(color: muted),
           ),
-          const SizedBox(height: 20),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      SupportDetails.qrAsset,
-                      fit: BoxFit.contain,
-                    ),
+          const SizedBox(height: 24),
+          SurfaceCard(
+            radius: 32,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    SupportDetails.qrAsset,
+                    fit: BoxFit.contain,
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Scan with any QR Ph app. This is a direct person-to-person '
-                    'transfer to the developer, not a purchase.',
-                    textAlign: TextAlign.center,
-                    style: text.bodySmall,
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Scan with any QR Ph app. This is a direct person-to-person '
+                  'transfer to the developer, not a purchase.',
+                  textAlign: TextAlign.center,
+                  style: text.bodySmall?.copyWith(color: muted),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
           Center(
             child: Text(
               'Never required. Thank you for using WakeGuard!',
-              style: text.bodySmall,
+              textAlign: TextAlign.center,
+              style: text.labelMedium?.copyWith(color: muted),
             ),
           ),
         ],

@@ -198,14 +198,19 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
     if (selected) {
       escapes.add(escape);
       // A QR escape with no code points at nothing, so create the code first.
-      if (escape == EscapeKind.qr && qrController.text.trim().isEmpty) {
-        qrController.text = sharedQrValue ?? generateQrSecret();
-      }
+      if (escape == EscapeKind.qr) _ensureQrSecret();
     } else {
       escapes.remove(escape);
     }
     validationError = null;
     safeNotify();
+  }
+
+  /// Every QR escape needs a code, so presets and toggles fill it in immediately.
+  void _ensureQrSecret() {
+    if (qrController.text.trim().isNotEmpty) return;
+    final shared = sharedQrValue?.trim() ?? '';
+    qrController.text = shared.isNotEmpty ? shared : generateQrSecret();
   }
 
   void generateCustomQrSecret() {
@@ -372,6 +377,8 @@ class AlarmEditorScreenViewModel extends ViewModel with WidgetsBindingObserver {
     };
     snoozeMinutes = index == 0 ? 9 : 0;
     checkInMinutes = index == 2 && canCheckIn ? 5 : 0;
+    // "Get out of bed" turns on QR, so it must come with a scannable code.
+    if (escapes.contains(EscapeKind.qr)) _ensureQrSecret();
     validationError = null;
     safeNotify();
   }

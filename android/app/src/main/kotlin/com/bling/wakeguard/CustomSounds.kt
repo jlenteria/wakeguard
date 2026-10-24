@@ -90,10 +90,27 @@ object CustomSounds {
         }
     }
 
-    fun delete(context: Context, id: String?) {
-        if (id.isNullOrBlank() || id != File(id).name) return
-        runCatching { File(dir(context), id).delete() }
+    private fun prefs(context: Context) = context.createDeviceProtectedStorageContext()
+        .getSharedPreferences("wakeguard.custom_sounds.v1", Context.MODE_PRIVATE)
+
+    /** Restarts the sweep grace period, so a just-released tone survives an Undo. */
+    fun touch(context: Context, id: String?) {
+        val file = fileFor(context, id) ?: return
+        runCatching { file.setLastModified(System.currentTimeMillis()) }
     }
+
+    /**
+     * Records the tones saved alarms use, including switched-off ones the native store dropped.
+     * A tone leaving the set is touched rather than deleted, so a deleted alarm can be undone.
+     */
+    @Synchronized fun retain(context: Context, ids: Collection<String>) {
+        val next = ids.filter { it.isNotBlank() && it == File(it).name }.toSet()
+        val previous = prefs(context).getStringSet(KEY_RETAINED, emptySet()).orEmpty()
+        (previous - next).forEach { touch(context, it) }
+        prefs(context).edit().putStringSet(KEY_RETAINED, next).commit()
+    }
+
+    private const val KEY_RETAINED = "retained"
 
     /** Removes files no alarm or live session references, sparing very recent picks. */
     fun sweep(context: Context) {
@@ -101,6 +118,7 @@ object CustomSounds {
             val referenced = buildSet {
                 AlarmStore.all(context).forEach { add(it.customSound) }
                 AlarmSessions.all(context).forEach { add(it.alarm.customSound) }
+                addAll(prefs(context).getStringSet(KEY_RETAINED, emptySet()).orEmpty())
             }
             val cutoff = System.currentTimeMillis() - SWEEP_MIN_AGE_MS
             dir(context).listFiles()?.forEach { file ->

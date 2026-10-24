@@ -58,7 +58,7 @@ class StayAwakeActivity : AppCompatActivity() {
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
-            setBackgroundColor(Color.parseColor("#101114"))
+            setBackgroundColor(Color.parseColor("#10141A"))
         }
         ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -74,32 +74,40 @@ class StayAwakeActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(24), dp(28), dp(24), dp(28))
-            background = rounded("#202126", 28)
+            background = rounded("#1C2026", 28, stroke = true)
         }
-        card.addView(text("STAY AWAKE CHECK-IN", 13f, "#FF9B70"), fullWidth())
-        card.addView(text("Still up?", 32f, "#FFFFFF").apply {
+        card.addView(text("STAY AWAKE CHECK-IN", 12f, "#FF9F66").apply {
             typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.08f
+        }, fullWidth())
+        card.addView(text("Still up?", 32f, "#DFE2EB").apply {
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = -0.02f
             ViewCompat.setAccessibilityHeading(this, true)
         }, fullWidth(20))
-        card.addView(text(session.alarm.label, 18f, "#B9BBC4"), fullWidth(12))
-        countdown = text("", 22f, "#FF9B70")
+        card.addView(text(session.alarm.label, 18f, "#DAC1B9"), fullWidth(12))
+        countdown = text("", 22f, "#FF9F66").apply { typeface = Typeface.DEFAULT_BOLD }
         card.addView(countdown, fullWidth(24))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 1000
-            progressTintList = ColorStateList.valueOf(Color.parseColor("#FF9B70"))
+            progressTintList = ColorStateList.valueOf(Color.parseColor("#FF9F66"))
+            progressBackgroundTintList = ColorStateList.valueOf(Color.parseColor("#31353C"))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         card.addView(progress, fullWidth(12))
         card.addView(text("Confirm you’re still awake to prevent a follow-up alarm. Opening this page does not confirm the check-in.",
-            16f, "#B9BBC4"), fullWidth(20))
+            16f, "#DAC1B9").apply { setLineSpacing(dp(3).toFloat(), 1f) }, fullWidth(20))
         error = text("", 15f, "#FFB4AB").apply { visibility = View.GONE }
         card.addView(error, fullWidth(12))
         confirm = Button(this).apply {
             text = "I'm up"
             isAllCaps = false
             minimumHeight = dp(56)
-            setTextColor(Color.parseColor("#101114"))
-            background = rounded("#FF9B70", 16)
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            stateListAnimator = null
+            setTextColor(Color.parseColor("#783316"))
+            background = rounded("#FF9E79", 100)
             setOnClickListener { confirmCheckIn() }
         }
         card.addView(confirm, fullWidth(24))
@@ -112,9 +120,8 @@ class StayAwakeActivity : AppCompatActivity() {
 
     private fun liveSession(): AlarmSession? {
         val session = AlarmSessions.get(this, alarmId) ?: return null
-        val now = System.currentTimeMillis()
         return session.takeIf { token != null && it.token == token && it.phase == "checkin" &&
-            now >= it.checkAt && now < it.checkAt + StayAwake.GRACE_MS }
+            StayAwake.windowOpen(it) }
     }
 
     private fun refreshWindow(): Boolean {
@@ -124,7 +131,7 @@ class StayAwakeActivity : AppCompatActivity() {
             finishAndRemoveTask()
             return false
         }
-        val remaining = (session.checkAt + StayAwake.GRACE_MS - System.currentTimeMillis())
+        val remaining = (StayAwake.deadline(session) - System.currentTimeMillis())
             .coerceIn(0L, StayAwake.GRACE_MS)
         countdown.text = "${(remaining + 999L) / 1000L} seconds remaining"
         progress.progress = (remaining * 1000L / StayAwake.GRACE_MS).toInt()
@@ -174,9 +181,10 @@ class StayAwakeActivity : AppCompatActivity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun fullWidth(top: Int = 0) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top) }
-    private fun rounded(color: String, radius: Int) = GradientDrawable().apply {
+    private fun rounded(color: String, radius: Int, stroke: Boolean = false) = GradientDrawable().apply {
         setColor(Color.parseColor(color))
         cornerRadius = dp(radius).toFloat()
+        if (stroke) setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#14FFFFFF"))
     }
     private fun text(value: String, size: Float, color: String) = TextView(this).apply {
         text = value

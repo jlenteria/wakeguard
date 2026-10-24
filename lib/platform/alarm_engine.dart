@@ -116,8 +116,20 @@ abstract interface class CustomSoundEngine {
   Future<void> previewCustomSound(String id, {bool vibrate = false});
 }
 
+/// Optional: tells the platform which uploaded tones saved alarms still use,
+/// including switched-off alarms the native store no longer holds.
+abstract interface class CustomSoundRetention {
+  /// Tones in [ids] are kept; a tone that drops out stays recoverable for a
+  /// grace period, so undoing a delete brings back its sound.
+  Future<void> retainCustomSounds(Set<String> ids);
+}
+
 class MethodChannelEngine
-    implements AlarmEngine, CheckInEngine, CustomSoundEngine {
+    implements
+        AlarmEngine,
+        CheckInEngine,
+        CustomSoundEngine,
+        CustomSoundRetention {
   MethodChannelEngine({MethodChannel? channel})
     : _channel =
           channel ??
@@ -206,6 +218,12 @@ class MethodChannelEngine
   @override
   Future<void> previewCustomSound(String id, {bool vibrate = false}) =>
       _invoke<void>('previewCustomSound', {'id': id, 'vibrate': vibrate});
+
+  @override
+  Future<void> retainCustomSounds(Set<String> ids) async {
+    if (!supportsCustomSounds) return;
+    await _invoke<void>('retainCustomSounds', {'ids': ids.toList()});
+  }
 
   @override
   Future<void> practice(Alarm alarm) =>

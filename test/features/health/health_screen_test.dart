@@ -102,8 +102,8 @@ void main() {
         lessThan(tester.getTopLeft(find.text('warning setting')).dy),
       );
       expect(find.text('passed setting'), findsNothing);
-      await tester.scrollUntilVisible(find.text('Passed checks (1)'), 150);
-      await tester.tap(find.text('Passed checks (1)'));
+      await tester.scrollUntilVisible(find.text('Passed checks'), 150);
+      await tester.tap(find.text('Passed checks'));
       await tester.pumpAndSettle();
       expect(find.text('passed setting'), findsOneWidget);
       engine.checks = [_check('passed', HealthSeverity.ok)];

@@ -238,9 +238,15 @@ class MainActivity : FlutterActivity() {
                 ?: throw IllegalArgumentException("id is required")
             val customSound = AlarmStore.get(this, id)?.customSound
             NativeAlarmScheduler.cancel(this, id)
-            // This alarm's file is only ever its own, so it goes with it.
-            CustomSounds.delete(this, customSound)
+            // Not deleted outright: a switched-off alarm still owns its tone, and a deleted one
+            // may be undone. The sweep removes it once no saved alarm uses it and the grace ends.
+            CustomSounds.touch(this, customSound)
             sweepCustomSounds()
+            null
+        }
+
+        "retainCustomSounds" -> {
+            CustomSounds.retain(this, call.argument<List<String>>("ids").orEmpty())
             null
         }
 
@@ -257,10 +263,10 @@ class MainActivity : FlutterActivity() {
 
         "history" -> AlarmDismissal.history(this)
         "pendingCheckIns" -> AlarmSessions.all(this).filter {
-            it.phase == "checkin" && System.currentTimeMillis() < it.checkAt + StayAwake.GRACE_MS
-        }.sortedBy { it.checkAt }.map {
+            it.phase == "checkin" && StayAwake.windowOpen(it)
+        }.sortedBy { it.promptedAt }.map {
             mapOf("id" to it.alarm.id, "sessionId" to it.token, "label" to it.alarm.label,
-                "dueAt" to it.checkAt, "expiresAt" to it.checkAt + StayAwake.GRACE_MS)
+                "dueAt" to it.promptedAt, "expiresAt" to StayAwake.deadline(it))
         }
         "confirmCheckIn" -> StayAwake.confirm(this,
             call.argument<String>("id") ?: throw IllegalArgumentException("id is required"),

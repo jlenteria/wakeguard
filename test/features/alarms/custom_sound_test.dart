@@ -1,8 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakeguard/features/alarms/alarm_controller.dart';
 import 'package:wakeguard/features/alarms/alarm_editor_screen_view_model.dart';
+import 'package:wakeguard/features/alarms/alarm_repository.dart';
 import 'package:wakeguard/features/alarms/tone_names.dart';
 import 'package:wakeguard/models/alarm.dart';
+import 'package:wakeguard/models/health.dart';
 import 'package:wakeguard/platform/alarm_engine.dart';
 
 class _SoundEngine extends EngineUnavailable implements CustomSoundEngine {
@@ -53,9 +56,92 @@ class _SoundEngine extends EngineUnavailable implements CustomSoundEngine {
   Future<void> stopAudibilitySample() async {}
 }
 
+class _RetainingEngine extends EngineUnavailable
+    implements CustomSoundRetention {
+  final store = <Alarm>[];
+  final retained = <Set<String>>[];
+
+  @override
+  Future<EngineCapabilities> capabilities() async => const EngineCapabilities(
+    canLoopWhileBackgrounded: true,
+    canLockScreenTakeover: true,
+    canUseCameraInBackground: true,
+    canBypassSilentSwitch: false,
+    pendingSlotCap: null,
+  );
+
+  @override
+  Future<List<HealthCheck>> health() async => const [];
+
+  @override
+  Future<List<Alarm>> nativeAlarms() async => List.of(store);
+
+  @override
+  Future<void> schedule(Alarm alarm, DateTime triggerAt) async {
+    store
+      ..removeWhere((value) => value.id == alarm.id)
+      ..add(alarm);
+  }
+
+  @override
+  Future<void> cancel(String alarmId) async =>
+      store.removeWhere((value) => value.id == alarmId);
+
+  @override
+  Future<void> retainCustomSounds(Set<String> ids) async =>
+      retained.add(Set.of(ids));
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+    'deleting releases a tone and undo retains it again, with its sound',
+    () async {
+      final engine = _RetainingEngine();
+      final controller = AlarmController(
+        engine: engine,
+        repository: AlarmRepository(),
+      );
+      addTearDown(controller.dispose);
+      await controller.reload();
+      await controller.refreshHealth();
+      const alarm = Alarm(
+        id: 'tone',
+        hour: 7,
+        minute: 0,
+        label: 'Morning',
+        escapes: {EscapeKind.tap},
+        customSoundId: 'rooster.mp3',
+        customSoundName: 'Rooster',
+      );
+      const off = Alarm(
+        id: 'off',
+        hour: 9,
+        minute: 0,
+        label: 'Off',
+        enabled: false,
+        escapes: {EscapeKind.tap},
+        customSoundId: 'quiet.mp3',
+        customSoundName: 'Quiet',
+      );
+
+      expect((await controller.upsert(off)).saved, isTrue);
+      expect((await controller.upsert(alarm)).saved, isTrue);
+      // A switched-off alarm keeps its tone even though native dropped it.
+      expect(engine.retained.last, {'quiet.mp3', 'rooster.mp3'});
+
+      expect(await controller.delete(alarm), isTrue);
+      expect(engine.retained.last, {'quiet.mp3'});
+
+      expect((await controller.upsert(alarm)).saved, isTrue);
+      expect(engine.retained.last, {'quiet.mp3', 'rooster.mp3'});
+      final restored = controller.alarms.firstWhere((a) => a.id == 'tone');
+      expect(restored.customSoundId, 'rooster.mp3');
+      expect(restored.customSoundName, 'Rooster');
+    },
+  );
 
   group('Alarm model', () {
     test('custom sound survives a JSON round trip', () {

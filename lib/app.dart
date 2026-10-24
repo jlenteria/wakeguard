@@ -7,6 +7,7 @@ import 'features/alarms/alarm_repository.dart';
 import 'features/settings/settings_controller.dart';
 import 'models/app_settings.dart';
 import 'platform/alarm_engine.dart';
+import 'shared/theme.dart';
 import 'features/shell/shell_screen.dart';
 import 'features/shell/shell_screen_view_model.dart';
 import 'package:provider/provider.dart';
@@ -25,41 +26,10 @@ class WakeGuardApp extends StatefulWidget {
   State<WakeGuardApp> createState() => _WakeGuardAppState();
 
   /// The app theme. Public so tests can assert light/dark tokens.
-  static ThemeData themeFor(Brightness brightness) {
-    final light = brightness == Brightness.light;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xffef5b2a),
-      brightness: brightness,
-    );
-    // Light mode is plain white everywhere: pages, the add/edit sheet, the bar.
-    // Dark mode keeps a dark sheet but lifts the cards above it so they read.
-    const white = Colors.white;
-    return ThemeData(
-      colorScheme: light ? scheme.copyWith(surface: white) : scheme,
-      scaffoldBackgroundColor: light ? white : scheme.surfaceContainerLowest,
-      appBarTheme: light
-          ? const AppBarTheme(
-              backgroundColor: white,
-              surfaceTintColor: Colors.transparent,
-            )
-          : null,
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: light ? white : scheme.surfaceContainerLowest,
-        modalBackgroundColor: light ? white : scheme.surfaceContainerLowest,
-        surfaceTintColor: Colors.transparent,
-      ),
-      cardTheme: CardThemeData(
-        color: light ? null : scheme.surfaceContainerHigh,
-      ),
-      navigationBarTheme: light
-          ? const NavigationBarThemeData(
-              backgroundColor: white,
-              surfaceTintColor: Colors.transparent,
-            )
-          : const NavigationBarThemeData(surfaceTintColor: Colors.transparent),
-      useMaterial3: true,
-    );
-  }
+  ///
+  /// Light mode is plain white everywhere: pages, the add/edit sheet, the bar.
+  /// Dark mode is "Obsidian Dawn": cards are lifted above the obsidian sheet.
+  static ThemeData themeFor(Brightness brightness) => WakeTheme.of(brightness);
 }
 
 class _WakeGuardAppState extends State<WakeGuardApp> {

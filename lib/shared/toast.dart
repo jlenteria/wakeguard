@@ -102,24 +102,34 @@ class _ToastCard extends StatelessWidget {
       ToastKind.success => Icons.check_circle_rounded,
       ToastKind.info => Icons.info_rounded,
     };
+    final text = Theme.of(context).textTheme;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: foreground.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(
             color: background.withValues(alpha: 0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 22, color: foreground),
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: foreground.withValues(alpha: 0.14),
+              ),
+              child: Icon(icon, size: 20, color: foreground),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -128,20 +138,17 @@ class _ToastCard extends StatelessWidget {
                 children: [
                   Text(
                     message,
-                    style: TextStyle(
+                    style: (text.titleSmall ?? const TextStyle()).copyWith(
                       color: foreground,
                       fontWeight: FontWeight.w600,
-                      height: 1.3,
                     ),
                   ),
                   if (detail != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       detail!,
-                      style: TextStyle(
+                      style: (text.bodySmall ?? const TextStyle()).copyWith(
                         color: foreground.withValues(alpha: 0.9),
-                        fontSize: 12.5,
-                        height: 1.35,
                       ),
                     ),
                   ],
@@ -151,7 +158,11 @@ class _ToastCard extends StatelessWidget {
             if (actionLabel != null) ...[
               const SizedBox(width: 8),
               TextButton(
-                style: TextButton.styleFrom(foregroundColor: foreground),
+                style: TextButton.styleFrom(
+                  foregroundColor: foreground,
+                  backgroundColor: foreground.withValues(alpha: 0.12),
+                  shape: const StadiumBorder(),
+                ),
                 onPressed: onAction,
                 child: Text(actionLabel!),
               ),

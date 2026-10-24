@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Used for the alarm accent in the AppCompat challenge theme. -->
-    <color name="wakeguard_accent">#FFB71C1C</color>
-    <color name="wakeguard_icon_background">#141C2B</color>
+    <color name="wakeguard_accent">#FFFF9E79</color>
+    <color name="wakeguard_canvas">#FF10141A</color>
+    <color name="wakeguard_icon_background">#10141A</color>
 </resources>

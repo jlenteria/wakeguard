@@ -278,6 +278,7 @@ class AlarmController extends ChangeNotifier {
       );
     }
 
+    await _retainSounds(next);
     try {
       if (alarm.enabled) {
         await engine.schedule(alarm, alarm.nextOccurrence());
@@ -391,6 +392,27 @@ class AlarmController extends ChangeNotifier {
 
   Future<bool> delete(Alarm alarm) => _queued(() => _delete(alarm));
 
+  /// Best effort: a failure only risks an unused tone being cleaned up later.
+  Future<void> _retainSounds(List<Alarm> alarms) async {
+    if (engine case final CustomSoundRetention retention) {
+      await _retain(retention, alarms);
+    }
+  }
+
+  Future<void> _retain(
+    CustomSoundRetention retention,
+    List<Alarm> alarms,
+  ) async {
+    try {
+      await retention.retainCustomSounds({
+        for (final alarm in alarms)
+          if (alarm.hasCustomSound) alarm.customSoundId,
+      });
+    } catch (error) {
+      debugPrint('WakeGuard could not retain custom sounds: $error');
+    }
+  }
+
   Future<bool> _delete(Alarm alarm) async {
     final next = _alarms.where((a) => a.id != alarm.id).toList();
     try {
@@ -399,6 +421,9 @@ class AlarmController extends ChangeNotifier {
       _setState(() => _lastError = 'Could not delete alarm: $error');
       return false;
     }
+    // The deleted alarm's tone drops out but is kept for a while, so Undo
+    // restores it with its sound instead of the default.
+    await _retainSounds(next);
     var cancelled = true;
     try {
       await engine.cancel(alarm.id);

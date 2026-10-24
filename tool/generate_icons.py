@@ -1,34 +1,67 @@
-"""Render branding and legacy Android icons (requires resvg-py and Pillow).
+"""Render branding and Android launcher icons from the logo mark (requires Pillow).
 
+Source: branding/wakeguard-mark.png, the transparent coral/cyan alarm-shield mark.
 Then run generate_ios_icons.py to refresh the opaque iOS icon catalog.
-Android adaptive and monochrome vector geometry must match the source SVG.
 """
 
-from io import BytesIO
 from pathlib import Path
 
-from PIL import Image
-import resvg_py
+from PIL import Image, ImageDraw
+
+BACKGROUND = "#10141A"
+
+
+def mark(root: Path) -> Image.Image:
+    with Image.open(root / "branding/wakeguard-mark.png") as source:
+        art = source.convert("RGBA")
+    art = art.crop(art.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox())
+    side = max(art.size)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.paste(art, ((side - art.width) // 2, (side - art.height) // 2))
+    return square
+
+
+def placed(art: Image.Image, canvas: int, scale: float) -> Image.Image:
+    """The mark centred on a transparent square canvas at [scale] of its width."""
+    size = round(canvas * scale)
+    layer = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    resized = art.resize((size, size), Image.Resampling.LANCZOS)
+    layer.paste(resized, ((canvas - size) // 2, (canvas - size) // 2), resized)
+    return layer
+
+
+def rounded_tile(art: Image.Image, size: int) -> Image.Image:
+    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=round(size * 0.22), fill=255)
+    tile.paste(Image.new("RGBA", (size, size), BACKGROUND), mask=mask)
+    return Image.alpha_composite(tile, placed(art, size, 0.70))
 
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    source = (root / "branding/wakeguard-logo.svg").read_text()
-    png = resvg_py.svg_to_bytes(svg_string=source)
-    with Image.open(BytesIO(png)) as rendered:
-        artwork = rendered.convert("RGBA")
-        artwork.save(root / "branding/wakeguard-logo.png", optimize=True)
-        densities = {"mdpi": 48, "hdpi": 72, "xhdpi": 96,
-                     "xxhdpi": 144, "xxxhdpi": 192}
-        for density, size in densities.items():
-            destination = root / f"android/app/src/main/res/mipmap-{density}/ic_launcher.png"
-            artwork.resize((size, size), Image.Resampling.LANCZOS).save(
-                destination, optimize=True
-            )
-            with Image.open(destination) as icon:
-                assert icon.size == (size, size)
-        assert artwork.size == (1024, 1024)
-    print("Generated branding PNG and verified all 5 Android legacy icons.")
+    res = root / "android/app/src/main/res"
+    art = mark(root)
+
+    branding = rounded_tile(art, 1024)
+    branding.save(root / "branding/wakeguard-logo.png", optimize=True)
+
+    densities = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
+    for density, factor in densities.items():
+        folder = res / f"mipmap-{density}"
+        legacy = round(48 * factor)
+        branding.resize((legacy, legacy), Image.Resampling.LANCZOS).save(folder / "ic_launcher.png", optimize=True)
+        # Adaptive layers are 108dp; keep the mark inside the 66dp safe zone.
+        adaptive = round(108 * factor)
+        foreground = placed(art, adaptive, 0.56)
+        foreground.save(folder / "ic_launcher_foreground.png", optimize=True)
+        monochrome = Image.new("RGBA", foreground.size, (255, 255, 255, 0))
+        monochrome.putalpha(foreground.getchannel("A"))
+        monochrome.save(folder / "ic_launcher_monochrome.png", optimize=True)
+        for name in ("ic_launcher.png", "ic_launcher_foreground.png", "ic_launcher_monochrome.png"):
+            with Image.open(folder / name) as icon:
+                assert icon.size[0] in (legacy, adaptive)
+    print("Generated branding PNG and Android legacy, adaptive and monochrome icons.")
 
 
 if __name__ == "__main__":

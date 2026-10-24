@@ -102,10 +102,28 @@ object NativeAlarmScheduler {
             }
             throw failure
         }
-        if (resetSession) AlarmSessions.invalidate(context, alarm.id)
+        // Undo brings the deleted occurrence back instead of starting over. The held session is
+        // read before the disarm below and resumed afterwards, so arming it is not undone.
+        val held = if (resetSession) AlarmSessions.takeHeld(context, alarm.id) else null
+        if (resetSession && held == null) AlarmSessions.invalidate(context, alarm.id)
         disarmRungs(context, alarm.id)
         runCatching { manager.cancel(snoozePendingIntent(context, alarm.id)) }
+        // Resuming an occurrence must not fail the schedule: the alarm itself is armed.
+        held?.let { runCatching { resume(context, it, scheduled) }
+            .onFailure { error -> android.util.Log.e("WakeGuard", "Could not resume held session", error) } }
         // Watchdogs exist only for a live session, never for a future alarm.
+    }
+
+    /**
+     * Puts a held occurrence back under its alarm with the current settings, then re-arms the
+     * timers its phase needs. A held ring resumes; a check-in keeps its original window.
+     */
+    private fun resume(context: Context, held: AlarmSession, alarm: StoredAlarm) {
+        val session = held.copy(alarm = alarm)
+        AlarmSessions.save(context, session)
+        AlarmSessions.restore(context, session)
+        if (session.phase == "ringing") AlarmSessions.play(context, session)
+        if (session.phase == "queued") AlarmSessions.drain(context)
     }
 
     /**
@@ -179,6 +197,7 @@ object NativeAlarmScheduler {
 
     fun rescheduleAll(context: Context, catchUp: Boolean = true) {
         AlarmSessions.expireStale(context)
+        AlarmSessions.sweepHeld(context)
         for (alarm in AlarmStore.all(context)) {
             if (!alarm.enabled) continue
             runCatching {
@@ -232,7 +251,8 @@ object NativeAlarmScheduler {
     }
 
     fun cancel(context: Context, id: String) {
-        AlarmSessions.invalidate(context, id)
+        // The occurrence is held rather than ended: Undo re-arms this same session.
+        AlarmSessions.hold(context, id)
         disarm(context, id)
         AlarmStore.remove(context, id)
     }
