@@ -272,9 +272,10 @@ class _ReadinessSummary extends StatelessWidget {
         : count == 0
         ? Icons.check_circle
         : Icons.error_outline;
-    final iconColor = tint ??
-        (unavailable ? scheme.onSurfaceVariant : tokens.dawn);
-    final iconBackground = tint?.withValues(alpha: 0.16) ??
+    final iconColor =
+        tint ?? (unavailable ? scheme.onSurfaceVariant : tokens.dawn);
+    final iconBackground =
+        tint?.withValues(alpha: 0.16) ??
         (unavailable
             ? scheme.surfaceContainerHighest
             : tokens.dawn.withValues(alpha: 0.2));
@@ -282,7 +283,8 @@ class _ReadinessSummary extends StatelessWidget {
       radius: 32,
       padding: const EdgeInsets.all(16),
       shadow: _shadowMd,
-      color: tint?.withValues(alpha: 0.1) ??
+      color:
+          tint?.withValues(alpha: 0.1) ??
           (light ? null : scheme.surfaceContainer),
       borderColor: tint?.withValues(alpha: 0.4) ?? Colors.transparent,
       child: Row(

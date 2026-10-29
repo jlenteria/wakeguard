@@ -61,16 +61,16 @@ validation even if the build succeeds. Complete `docs/VERIFICATION.md`.
 
 ## Publish the privacy page
 
-Copy `docs/wakeguard-privacy.html` into the published root of your Netlify website
+Copy `docs/wakeguard-privacy.html` into the published root of your Render website
 (for a site with a build pipeline, usually its `public/` directory), then deploy
 that website normally. Verify this URL serves the policy rather than a 404 or the
 site's single-page-app fallback:
 
-https://jlenteria.netlify.app/wakeguard-privacy.html
+https://jlenteria.onrender.com/wakeguard-privacy.html
 
 The matching in-app policy is in Settings -> Privacy policy.
 Privacy contact: jlenteria98@gmail.com.
-This repository prepares the HTML; it does not deploy the separate Netlify site.
+This repository prepares the HTML; it does not deploy the separate Render site.
 
 ## Play Console
 
@@ -108,7 +108,7 @@ This repository prepares the HTML; it does not deploy the separate Netlify site.
   (`android.hardware.camera.front` is `required="false"`).
 - **Data Safety:** collection by ML Kit SDKs (device/app info, installation IDs,
   diagnostics). Not collected by WakeGuard: accounts, alarm contents, camera frames.
-  Privacy policy URL: https://jlenteria.netlify.app/wakeguard-privacy.html
+  Privacy policy URL: https://jlenteria.onrender.com/wakeguard-privacy.html
 
 ### Per-upload checklist
 

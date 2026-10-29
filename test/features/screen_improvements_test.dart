@@ -175,9 +175,11 @@ void main() {
     final context = tester.element(find.byType(AlarmsScreen));
     final now = DateTime.now();
     final days =
-        (DateTime(at.year, at.month, at.day)
-                    .difference(DateTime(now.year, now.month, now.day))
-                    .inHours /
+        (DateTime(
+                  at.year,
+                  at.month,
+                  at.day,
+                ).difference(DateTime(now.year, now.month, now.day)).inHours /
                 24)
             .round();
     final day = days <= 0
@@ -198,9 +200,7 @@ void main() {
     expect(find.text('Work'), findsOneWidget);
   });
 
-  testWidgets('alarm rows are rounded surface cards', (
-    tester,
-  ) async {
+  testWidgets('alarm rows are rounded surface cards', (tester) async {
     await initialize(
       alarms: [
         Alarm(

@@ -158,9 +158,7 @@ class OnboardingScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Text(
                           viewModel.lastError!,
-                          style: text.bodySmall?.copyWith(
-                            color: scheme.error,
-                          ),
+                          style: text.bodySmall?.copyWith(color: scheme.error),
                         ),
                       ),
                     ],
@@ -236,7 +234,9 @@ class OnboardingScreen extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                viewModel.finishing ? 'Opening…' : 'Get started',
+                                viewModel.finishing
+                                    ? 'Opening…'
+                                    : 'Get started',
                               ),
                             ),
                             if (!viewModel.finishing) ...[
@@ -459,9 +459,9 @@ class _Badge extends StatelessWidget {
     ),
     child: Text(
       label,
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: foreground,
-      ),
+      style: Theme.of(
+        context,
+      ).textTheme.labelSmall?.copyWith(color: foreground),
     ),
   );
 }

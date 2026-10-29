@@ -291,7 +291,13 @@ object HealthChecker {
                 details,
             )
 
-            else -> listOf(
+            else -> listOfNotNull(
+                // The system dialog works on every device, HyperOS included, and is the only
+                // fix path MIUI component screens (renamed or removed per release) cannot break.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                        .setData(Uri.parse("package:${context.packageName}"))
+                } else null,
                 Intent().setClassName(
                     "com.miui.powerkeeper",
                     "com.miui.powerkeeper.ui.HiddenAppsConfigActivity",

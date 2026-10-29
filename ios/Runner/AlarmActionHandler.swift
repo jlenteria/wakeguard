@@ -9,7 +9,7 @@ final class AlarmActionHandler {
     static let shared = AlarmActionHandler()
 
     private let scheduler = LadderScheduler.shared
-    private let store = AlarmStore()
+    private let store = AlarmStore.shared
 
     private init() {}
 
@@ -25,8 +25,9 @@ final class AlarmActionHandler {
 
         switch response.actionIdentifier {
         case ActionIdentifier.snooze.rawValue:
-            Task { await snooze(alarmId: alarmId) }
-            completionHandler()
+            // The process suspends the moment completion is called, so the
+            // reschedule must finish inside a background task first.
+            withBackgroundTask({ await self.snooze(alarmId: alarmId) }, then: completionHandler)
 
         case ActionIdentifier.confirm.rawValue:
             guard let textResponse = response as? UNTextInputNotificationResponse else {
@@ -35,10 +36,14 @@ final class AlarmActionHandler {
             }
             let answer = (userInfo["answer"] as? Int) ?? 0
             if Challenge.matches(input: textResponse.userText, answer: answer) {
-                Task { await dismiss(alarmId: alarmId, method: "typed") }
+                withBackgroundTask(
+                    { await self.dismiss(alarmId: alarmId, method: "typed") },
+                    then: completionHandler
+                )
+            } else {
+                // A wrong answer is a no-op; the next rung fires with a fresh question.
+                completionHandler()
             }
-            // A wrong answer is a no-op; the next rung fires with a fresh question.
-            completionHandler()
 
         case ActionIdentifier.openChallenge.rawValue:
             presentChallenge(alarmId: alarmId)
@@ -46,6 +51,25 @@ final class AlarmActionHandler {
 
         default:
             completionHandler()
+        }
+    }
+
+    /// Runs async alarm work before releasing the notification-response
+    /// completion handler, with a background task so the process cannot be
+    /// suspended mid-reschedule. `handle` is not main-actor isolated, so the
+    /// UIApplication calls happen inside the MainActor task, not around it.
+    private func withBackgroundTask(
+        _ work: @escaping @MainActor () async -> Void,
+        then completion: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            let application = UIApplication.shared
+            let task = application.beginBackgroundTask {
+                // Expiry: let go of the assertion; the work itself is best-effort.
+            }
+            await work()
+            completion()
+            if task != .invalid { application.endBackgroundTask(task) }
         }
     }
 
@@ -60,9 +84,25 @@ final class AlarmActionHandler {
     }
 
     private func snooze(alarmId: String) async {
-        scheduler.cancel(alarmId)
         guard let alarm = store.get(alarmId) else { return }
-        await scheduler.schedule(alarm, triggerAt: Date().addingTimeInterval(9 * 60))
+        // Snooze is honoured only when the alarm allows it; the no-snooze
+        // category should prevent the action, this guards stale delivered rungs.
+        guard alarm.effectiveSnoozeMinutes > 0 else { return }
+        scheduler.cancel(alarmId)
+        do {
+            try await scheduler.schedule(
+                alarm,
+                triggerAt: Date().addingTimeInterval(TimeInterval(alarm.effectiveSnoozeMinutes * 60))
+            )
+        } catch {
+            NSLog("WakeGuard: snooze of alarm %@ failed: %@", alarmId, String(describing: error))
+            // Never lose the next scheduled occurrence over a failed snooze.
+            do {
+                try await scheduler.schedule(alarm, triggerAt: scheduler.nextTrigger(alarm, from: Date()))
+            } catch {
+                NSLog("WakeGuard: snooze fallback reschedule failed too: %@", String(describing: error))
+            }
+        }
     }
 
     @discardableResult
@@ -80,7 +120,13 @@ final class AlarmActionHandler {
         }
 
         store.put(alarm)
-        await scheduler.schedule(alarm, triggerAt: scheduler.nextTrigger(alarm, from: Date()))
+        do {
+            // `nextTrigger` honours the stored skip-until window, so a skipped
+            // alarm rolls to the next occurrence that is actually due.
+            try await scheduler.schedule(alarm, triggerAt: scheduler.nextTrigger(alarm, from: Date()))
+        } catch {
+            NSLog("WakeGuard: roll-forward after dismiss of alarm %@ failed: %@", alarmId, String(describing: error))
+        }
         return true
     }
 
@@ -98,20 +144,12 @@ final class AlarmActionHandler {
 }
 
 private extension StoredAlarm {
+    /// Flips only `enabled` on a value copy. Rebuilding via the memberwise init
+    /// would fail to compile against the added fields, and a field-dropping init
+    /// would silently reset escape/snooze/skip settings when a one-shot retires.
     func disabled() -> StoredAlarm {
-        StoredAlarm(
-            id: id,
-            hour: hour,
-            minute: minute,
-            label: label,
-            enabled: false,
-            repeatDaily: repeatDaily,
-            weekdays: weekdays,
-            qrValue: qrValue,
-            stepCount: stepCount,
-            // Copy every field; dropping one silently resets it when disabled after ringing.
-            soundPack: soundPack,
-            holdSeconds: holdSeconds
-        )
+        var retired = self
+        retired.enabled = false
+        return retired
     }
 }

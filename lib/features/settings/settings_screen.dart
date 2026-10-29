@@ -356,9 +356,7 @@ class _Section extends StatelessWidget {
                 Icon(icon, size: 20, color: iconColor),
                 const SizedBox(width: 8),
               ],
-              Expanded(
-                child: Text(title, style: theme.textTheme.titleMedium),
-              ),
+              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
             ],
           ),
           if (subtitle != null) ...[

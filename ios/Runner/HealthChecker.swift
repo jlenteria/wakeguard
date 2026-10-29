@@ -25,6 +25,9 @@ enum HealthChecker {
             "canBypassSilentSwitch": hasCriticalAlertsEntitlement,
             // Hard limit; the ladder planner enforces this.
             "pendingSlotCap": EscalationPolicy.pendingNotificationCap,
+            "contractVersion": 2,
+            "canPractice": false,
+            "canCheckIn": false,
         ]
     }
 
@@ -34,7 +37,7 @@ enum HealthChecker {
         let settings = await notificationSettings()
 
         switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
+        case .authorized, .ephemeral:
             results.append(
                 health(
                     id: "notification_authorization",
@@ -43,6 +46,20 @@ enum HealthChecker {
                     ok: NSLocalizedString("health.notifications.ok", comment: ""),
                     bad: "",
                     action: nil
+                )
+            )
+        case .provisional:
+            // Provisional delivery lands silently in Notification Center: the
+            // alarm exists but cannot wake anyone, so passing it would be a lie.
+            results.append(
+                health(
+                    id: "notification_authorization",
+                    label: NSLocalizedString("health.notifications", comment: ""),
+                    passing: false,
+                    ok: "",
+                    bad: NSLocalizedString("health.notifications.provisional", comment: ""),
+                    action: "notifications",
+                    failSeverity: "warning"
                 )
             )
         default:
@@ -112,14 +129,18 @@ enum HealthChecker {
             )
         )
 
+        // The ringer switch mutes every non-critical notification, time-sensitive
+        // included; claiming this passes without the entitlement hides the most
+        // common way an alarm fails to wake anyone.
         results.append(
             health(
                 id: "silent_switch",
                 label: NSLocalizedString("health.silent", comment: ""),
-                passing: true,
+                passing: hasCriticalAlertsEntitlement,
                 ok: NSLocalizedString("health.silent.ok", comment: ""),
-                bad: "",
-                action: nil
+                bad: NSLocalizedString("health.silent.bad", comment: ""),
+                action: nil,
+                failSeverity: "warning"
             )
         )
 
@@ -148,15 +169,24 @@ enum HealthChecker {
         passing: Bool,
         ok: String,
         bad: String,
-        action: String?
+        action: String?,
+        failSeverity: String = "blocking"
     ) -> [String: Any] {
-        [
+        var entry: [String: Any] = [
             "id": id,
             "label": label,
             "detail": passing ? ok : bad,
-            "severity": passing ? "ok" : "blocking",
-            "action": passing ? NSNull() : (action as Any?),
+            "severity": passing ? "ok" : failSeverity,
         ]
+        // A Swift `nil` boxed into [String: Any] is not bridgable by the channel
+        // codec (it crashes the whole health reply), so failing checks without a
+        // fix action send NSNull, which Dart reads as a null action.
+        if !passing, let action {
+            entry["action"] = action
+        } else {
+            entry["action"] = NSNull()
+        }
+        return entry
     }
 
     static func openFix(_ action: String) {
@@ -218,6 +248,11 @@ enum AudibilityProbe {
     static func stop() {
         player?.stop()
         player = nil
+        // The probe activated a .playback session that would otherwise keep the
+        // app as the audio owner; deactivating lets other apps (music, calls)
+        // resume with their volume restored.
+        try? AVAudioSession.sharedInstance()
+            .setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private final class ProbeDelegate: NSObject, AVAudioPlayerDelegate {

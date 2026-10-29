@@ -35,17 +35,38 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmSessions.play(context, resumed)
             return
         }
+        // Corrective rung for a next-occurrence arm that failed: retry rather than accept a lost day.
+        val retryAttempt = intent.getIntExtra("next_retry", 0)
+        if (retryAttempt > 0) {
+            NativeAlarmScheduler.retryNextTrigger(
+                context, id, retryAttempt, intent.getBooleanExtra("next_retry_force", false))
+            return
+        }
+        // A queued occurrence only promotes when the alarm ahead of it is gone.
+        if (intent.getBooleanExtra("queue_watchdog", false)) {
+            val session = AlarmSessions.get(context, id) ?: return
+            if (!AlarmPolicy.acceptsSession(session.token, intent.getStringExtra(AlarmSessions.EXTRA_SESSION),
+                    session.phase, "queued")) return
+            AlarmSessions.drain(context)
+            return
+        }
         if (rung != PRIMARY_TRIGGER) {
             val session = AlarmSessions.get(context, id) ?: return
             if (!AlarmPolicy.acceptsSession(session.token, intent.getStringExtra(AlarmSessions.EXTRA_SESSION), session.phase, "ringing")) return
             val elapsed = session.elapsed(context)
-            val minimum = when (rung) { 0 -> 45_000L; 1 -> 120_000L; 2 -> 300_000L; 3 -> 600_000L; 4 -> AlarmDefaults.MAX_RINGING_MS; else -> return }
+            // The rung index is the position in the shared escalation ladder: one definition, so a
+            // rung can never be delivered before the step it belongs to.
+            val minimum = if (rung == NativeAlarmScheduler.ESCALATION_OFFSETS_MS.size) AlarmDefaults.MAX_RINGING_MS
+                else NativeAlarmScheduler.ESCALATION_OFFSETS_MS.getOrNull(rung) ?: return
             if (elapsed < minimum) return
             if (elapsed >= AlarmDefaults.MAX_RINGING_MS) {
                 AlarmSessions.expire(context, session)
             } else {
-                runCatching { RingingService.start(context, session.alarm, elapsed) }
-                    .onFailure { RingingService.postFallbackNotification(context, session.alarm) }
+                runCatching { RingingService.start(context, session.alarm) }
+                    .onFailure {
+                        android.util.Log.e("WakeGuard", "Ringing service could not start; degrading audibly", it)
+                        RingingService.postFallbackNotification(context, session.alarm)
+                    }
             }
             return
         }
@@ -71,11 +92,13 @@ class AlarmReceiver : BroadcastReceiver() {
         // More than a ring window late is a missed occurrence, not a surprise alarm.
         val session = AlarmSessions.begin(context, alarm, expected, recordStart = now - expected < AlarmDefaults.MAX_RINGING_MS)
         android.util.Log.i(TAG, "Trigger for $id accepted: session phase=${session.phase}, ${now - expected} ms after schedule")
+        // Arm tomorrow before dealing with tonight's ring, then keep the alarm alive even if this
+        // single arm is rejected: a transient failure must never be the end of the next occurrence.
         runCatching { NativeAlarmScheduler.armNextTrigger(context, alarm) }
+            .onSuccess { NativeAlarmScheduler.clearNextScheduleFailures(context, alarm) }
             .onFailure {
-                AlarmStore.put(context, alarm.copy(enabled = false, nextTriggerAt = 0L))
-                AlarmEvents.record(context, session, "next_schedule_failed")
                 android.util.Log.e("WakeGuard", "Next occurrence could not be armed", it)
+                NativeAlarmScheduler.handleNextTriggerFailure(context, alarm)
             }
         if (now - expected >= AlarmDefaults.MAX_RINGING_MS) {
             AlarmEvents.record(context, session, "missed")
@@ -85,7 +108,6 @@ class AlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "WakeGuard"
-        const val MAX_WATCHDOG_RUNGS = 4
         const val PRIMARY_TRIGGER = -1
     }
 }

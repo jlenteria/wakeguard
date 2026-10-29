@@ -7,7 +7,8 @@ struct StoredAlarm: Codable {
     let hour: Int
     let minute: Int
     let label: String
-    let enabled: Bool
+    /// Stored so `disabled()` can flip one field without a field-dropping init.
+    var enabled: Bool
     let repeatDaily: Bool
     let weekdays: Set<Int>
     let qrValue: String
@@ -16,14 +17,47 @@ struct StoredAlarm: Codable {
     let soundPack: String?
     /// Seconds the hold-to-stop escape takes; optional so old alarms decode to the default.
     let holdSeconds: Int?
+    /// Escape names (`tap|face|object|qr`) as sent by Dart; echoed back verbatim so a
+    /// round-trip through the native store never invalidates the alarm.
+    let escapes: [String]?
+    /// Snooze length in minutes; 0 disables snoozing. Optional so old alarms default to 9.
+    let snoozeMinutes: Int?
+    /// Epoch millis before which the alarm must not fire (user skipped an occurrence).
+    let skipUntilMillis: Int?
+    /// Object label for the object challenge (`sink|cup`); echoed back to Dart.
+    let objectTarget: String?
+    /// Result of an actual native practice scan; never fabricated.
+    let objectVerified: Bool?
+    /// Draft alarms from Dart carry the flag; echo it instead of dropping it.
+    let needsSetup: Bool?
+    /// Whether the alarm vibrates alongside the tone; echoes the Dart field.
+    let vibrate: Bool?
 
     var resolvedSoundPack: String { soundPack ?? AlarmSounds.defaultPack }
+
+    /// Names Dart's `EscapeKind` accepts; anything else would force needsSetup in Dart.
+    static let validEscapeNames = ["tap", "face", "object", "qr"]
+
+    /// Valid escape names only; an empty/invalid set falls back to the Dart default.
+    var effectiveEscapes: [String] {
+        let valid = (escapes ?? []).filter { Self.validEscapeNames.contains($0) }
+        return valid.isEmpty ? ["face"] : valid
+    }
 
     /// Lifetime value for an alarm that predates per-alarm holds; also the strictest preset.
     static let defaultHoldSeconds = 60
 
     /// Seconds the hold-to-stop escape takes, clamped to the range the UI offers.
     var effectiveHoldSeconds: Int { min(90, max(15, holdSeconds ?? Self.defaultHoldSeconds)) }
+
+    /// Mirrors Dart `Alarm.defaultSnoozeMinutes`; 0 means no snooze.
+    var effectiveSnoozeMinutes: Int { min(60, max(0, snoozeMinutes ?? 9)) }
+
+    var effectiveSkipUntilMillis: Int { skipUntilMillis ?? 0 }
+
+    var effectiveObjectTarget: String {
+        objectTarget == "cup" ? "cup" : "sink"
+    }
 
     /// Notification identifier prefix; the escalation ladder appends an index.
     var ladderIdPrefix: String { "wakeguard.\(id).rung" }

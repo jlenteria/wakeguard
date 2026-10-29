@@ -27,7 +27,8 @@ GRADLEW := ./android/gradlew -p android
 	format format-check test test-native verify removable check audit \
 	icons alarms assets build-apk build-apk-release build-aab build-ios \
 	build-ios-release release release-check release-key release-verify \
-	install install-release uninstall logcat logcat-alarm forward
+	install install-release install-ios install-ios-release uninstall \
+	logcat logcat-alarm forward
 
 help:
 	@echo "WakeGuard targets"
@@ -74,9 +75,11 @@ help:
 	@echo "    make release-verify   Require every AAB entry to match the upload certificate"
 	@echo ""
 	@echo "  Device"
-	@echo "    make install          Install the debug APK"
-	@echo "    make install-release  Install the release APK"
-	@echo "    make uninstall        Remove the app from the device"
+	@echo "    make install          Install the debug APK (Android)"
+	@echo "    make install-release  Install the release APK (Android)"
+	@echo "    make install-ios      Install the debug iOS app to a connected device"
+	@echo "    make install-ios-release Install the release iOS app to a connected device"
+	@echo "    make uninstall        Remove the app from the device (Android)"
 	@echo "    make logcat           Tail WakeGuard/alarm system logs"
 	@echo "    make logcat-alarm     Tail alarm-manager logs only"
 	@echo "    make forward          Forward Flutter observatory-style ports (optional)"
@@ -212,3 +215,13 @@ logcat-alarm:
 
 forward:
 	$(ADB) forward tcp:5353 tcp:5353
+
+# --- iOS Device --------------------------------------------------------------
+# `flutter install` builds if needed, then installs onto the attached iOS device.
+# Physical devices require a valid signing identity/provisioning profile.
+
+install-ios:
+	$(FLUTTER) install $(if $(DEVICE),-d $(DEVICE),) --debug
+
+install-ios-release:
+	$(FLUTTER) install $(if $(DEVICE),-d $(DEVICE),) --release

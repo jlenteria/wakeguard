@@ -125,7 +125,7 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
 16. **History/settings/privacy:** settings persist through restart; transient
     history reads retain the previous list; clearing history does not clear
     alarms/check-ins. Stats are labelled as saved-history totals. Settings shows
-    the full Privacy policy and correct contact; the public Netlify policy URL
+    the full Privacy policy and correct contact; the public Render policy URL
     serves that policy. Support shows only the QR, without account/recipient rows.
 
 Record device model, Android version, build revision, selected target/challenge,

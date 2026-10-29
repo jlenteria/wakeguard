@@ -70,6 +70,7 @@
 "health.notifications" = "Notifications";
 "health.notifications.ok" = "WakeGuard is allowed to send alarm notifications. Check that Sounds is also on in your iPhone’s notification settings.";
 "health.notifications.bad" = "Allow WakeGuard notifications in Settings > Notifications > WakeGuard to receive alarms.";
+"health.notifications.provisional" = "Notifications are delivered quietly instead of as alerts, so an alarm will arrive silently and cannot wake you. Turn notifications on for WakeGuard in Settings > Notifications.";
 "health.time_sensitive" = "Time Sensitive";
 "health.time_sensitive.ok" = "Time Sensitive Notifications are on. Allow them in any Focus you use overnight so alarm reminders can reach you.";
 "health.time_sensitive.bad" = "Turn on Time Sensitive Notifications for WakeGuard and allow them in your overnight Focus.";
@@ -82,4 +83,5 @@
 "health.budget.ok" = "%d of %d reminders scheduled. Each alarm may use several reminders.";
 "health.budget.bad" = "%d reminders scheduled; WakeGuard has room for %d. Turn off or delete some alarms so later ones can be scheduled.";
 "health.silent" = "Silent mode";
-"health.silent.ok" = "Check that Silent mode is off on your iPhone unless you have allowed Critical Alerts for WakeGuard.";
+"health.silent.ok" = "Critical Alerts are granted, so alarms sound even when the ring/silent switch is set to silent.";
+"health.silent.bad" = "Without Critical Alerts, the ring/silent switch mutes every alarm, including Time Sensitive ones. Keep the ringer on, or request Critical Alerts for WakeGuard.";

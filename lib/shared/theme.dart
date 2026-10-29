@@ -184,25 +184,32 @@ class WakeTheme {
   );
 
   static TextTheme _text(ColorScheme scheme) {
-    TextStyle d(double size, FontWeight weight, double height, double spacing) =>
-        TextStyle(
-          fontFamily: display,
-          fontSize: size,
-          fontWeight: weight,
-          height: height / size,
-          letterSpacing: spacing * size,
-          color: scheme.onSurface,
-        );
-    TextStyle b(double size, FontWeight weight, double height,
-            [double spacing = 0]) =>
-        TextStyle(
-          fontFamily: body,
-          fontSize: size,
-          fontWeight: weight,
-          height: height / size,
-          letterSpacing: spacing * size,
-          color: scheme.onSurface,
-        );
+    TextStyle d(
+      double size,
+      FontWeight weight,
+      double height,
+      double spacing,
+    ) => TextStyle(
+      fontFamily: display,
+      fontSize: size,
+      fontWeight: weight,
+      height: height / size,
+      letterSpacing: spacing * size,
+      color: scheme.onSurface,
+    );
+    TextStyle b(
+      double size,
+      FontWeight weight,
+      double height, [
+      double spacing = 0,
+    ]) => TextStyle(
+      fontFamily: body,
+      fontSize: size,
+      fontWeight: weight,
+      height: height / size,
+      letterSpacing: spacing * size,
+      color: scheme.onSurface,
+    );
     return TextTheme(
       displayLarge: d(72, FontWeight.w700, 76, -0.04),
       displayMedium: d(56, FontWeight.w700, 60, -0.03),
@@ -413,7 +420,9 @@ class WakeTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: light ? scheme.inverseSurface : scheme.surfaceContainerHighest,
+        backgroundColor: light
+            ? scheme.inverseSurface
+            : scheme.surfaceContainerHighest,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: light ? Colors.white : scheme.surfaceContainerHigh,
@@ -428,6 +437,14 @@ class WakeTheme {
       timePickerTheme: TimePickerThemeData(
         backgroundColor: light ? Colors.white : scheme.surfaceContainerHigh,
         shape: const RoundedRectangleBorder(borderRadius: cardRadius),
+        // displayLarge (72) is too wide for the picker's fixed hour/minute
+        // boxes: with larger system text "00" wraps and shows as "0".
+        hourMinuteTextStyle: const TextStyle(
+          fontFamily: display,
+          fontSize: 48,
+          fontWeight: FontWeight.w700,
+          fontFeatures: tabular,
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

@@ -21,6 +21,9 @@ data class AlarmSession(
     val occurrenceStartedAt: Long = startedAt,
     val occurrenceElapsed: Long = startedElapsed,
     val occurrenceBoot: Int = bootCount,
+    /** Wall clock at the start of this boot, so a reboot is detectable without the hidden boot_count. */
+    val bootWallClock: Long = AlarmPolicy.bootWallClock(System.currentTimeMillis(),
+        android.os.SystemClock.elapsedRealtime()),
     /** When the check-in prompt was actually shown; the response window starts here. */
     val promptedAt: Long = 0L,
 ) {
@@ -32,11 +35,13 @@ data class AlarmSession(
         put("startedElapsed", startedElapsed); put("bootCount", bootCount)
         put("occurrenceStartedAt", occurrenceStartedAt); put("occurrenceElapsed", occurrenceElapsed)
         put("occurrenceBoot", occurrenceBoot); put("promptedAt", promptedAt)
+        put("bootWallClock", bootWallClock)
     }.toString()
 
     fun elapsed(context: Context): Long = AlarmPolicy.elapsed(startedAt, startedElapsed, bootCount,
         runCatching { android.provider.Settings.Global.getInt(context.contentResolver, "boot_count", 0) }.getOrDefault(0),
-        System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime())
+        System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
+        savedBootWallClock = bootWallClock)
 }
 
 object AlarmSessions {
@@ -57,7 +62,9 @@ object AlarmSessions {
             j.getLong("scheduledAt"), j.getLong("startedAt"), j.getString("phase"),
             j.optInt("snoozes"), j.optBoolean("followUp"), j.optLong("checkAt"), j.optLong("startedElapsed"), j.optInt("bootCount", -1),
             j.optLong("occurrenceStartedAt", j.getLong("startedAt")), j.optLong("occurrenceElapsed"), j.optInt("occurrenceBoot", -1),
-            j.optLong("promptedAt"))
+            j.optLong("bootWallClock", AlarmPolicy.bootWallClock(
+                System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime())),
+            promptedAt = j.optLong("promptedAt"))
     }.getOrNull()
 
     fun all(context: Context): List<AlarmSession> = prefs(context).all.values
@@ -139,6 +146,12 @@ object AlarmSessions {
         val session = AlarmSession(UUID.randomUUID().toString(), alarm, scheduledAt,
             System.currentTimeMillis(), if (queued) "queued" else "ringing", bootCount = currentBoot(context))
         save(context, session)
+        if (queued) {
+            // The in-process drain below is only the fast path: a real trigger promotes this
+            // occurrence even if the process dies while it waits behind the alarm ahead of it.
+            runCatching { NativeAlarmScheduler.armQueueWatchdog(context, session) }
+                .onFailure { android.util.Log.e("WakeGuard", "Queue watchdog could not be armed", it) }
+        }
         if (recordStart) AlarmEvents.record(context, session, "started")
         return session
     }
@@ -149,7 +162,7 @@ object AlarmSessions {
         if (elapsed >= AlarmDefaults.MAX_RINGING_MS) { expire(context, session); return }
         runCatching { NativeAlarmScheduler.armWatchdogs(context, session.alarm, System.currentTimeMillis() - elapsed) }
             .onFailure { android.util.Log.e("WakeGuard", "Watchdog recovery could not be armed", it) }
-        runCatching { RingingService.start(context, session.alarm, elapsed) }
+        runCatching { RingingService.start(context, session.alarm) }
             .onFailure { RingingService.postFallbackNotification(context, session.alarm) }
         AlarmChallengeLauncher.openIfVisible(context, session)
     }
@@ -174,6 +187,8 @@ object AlarmSessions {
     fun drain(context: Context) {
         if (active(context) != null) return
         val next = all(context).filter { it.phase == "queued" }.minByOrNull { it.scheduledAt } ?: return
+        // This drain owns the promotion now; the standalone trigger would only double-fire it.
+        runCatching { NativeAlarmScheduler.cancelQueueWatchdog(context, next) }
         if (next.elapsed(context) >= AlarmDefaults.MAX_RINGING_MS) {
             AlarmEvents.record(context, next, "missed")
             save(context, next.copy(phase = "done"))
@@ -202,7 +217,9 @@ object AlarmSessions {
 
     fun restarted(context: Context, session: AlarmSession, phase: String): AlarmSession = session.copy(
         phase = phase, startedAt = System.currentTimeMillis(), startedElapsed = android.os.SystemClock.elapsedRealtime(),
-        bootCount = currentBoot(context))
+        bootCount = currentBoot(context),
+        bootWallClock = AlarmPolicy.bootWallClock(System.currentTimeMillis(),
+            android.os.SystemClock.elapsedRealtime()))
 
     fun restore(context: Context) {
         for (session in all(context)) restore(context, session)
@@ -240,7 +257,8 @@ object AlarmEvents {
             put("alarmId", session.alarm.id); put("label", session.alarm.label); put("sessionId", session.token)
             put("scheduledAt", session.scheduledAt)
             put("durationMs", AlarmPolicy.elapsed(session.occurrenceStartedAt, session.occurrenceElapsed,
-                session.occurrenceBoot, AlarmSessions.currentBoot(context), System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime()))
+                session.occurrenceBoot, AlarmSessions.currentBoot(context), System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
+                savedBootWallClock = session.bootWallClock))
             put("snoozes", session.snoozes); put("followUp", session.followUp)
             put("checkInMinutes", session.alarm.checkInMinutes)
         })

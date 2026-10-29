@@ -87,7 +87,7 @@ class AlarmRingActivity : AppCompatActivity() {
     private val bodyFont by lazy { loadFont(R.font.inter_regular, Typeface.DEFAULT) }
     private lateinit var retryCamera: Button
     private var provider: ProcessCameraProvider? = null
-    private var faceDetector: com.google.mlkit.vision.face.FaceDetector? = null
+    @Volatile private var faceDetector: com.google.mlkit.vision.face.FaceDetector? = null
     private var barcodeScanner: com.google.mlkit.vision.barcode.BarcodeScanner? = null
     private var objectLabeler: com.google.mlkit.vision.label.ImageLabeler? = null
     @Volatile private var generation = 0
@@ -101,10 +101,10 @@ class AlarmRingActivity : AppCompatActivity() {
     private var practice = false
     private var alarmId = ""
     private var sessionId: String? = null
-    private var qrValue = ""
-    private var objectTarget = "sink"
+    @Volatile private var qrValue = ""
+    @Volatile private var objectTarget = "sink"
     private var escapes = setOf(AlarmDefaults.ESCAPE_FACE)
-    private var actions = listOf<WakeAction>()
+    @Volatile private var actions = listOf<WakeAction>()
     private var actionIndex = 0
     private var blinkCount = 0
     private var eyesWereClosed = false

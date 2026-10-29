@@ -19,11 +19,15 @@ import AudioToolbox
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AlarmEngineChannel") {
-      AlarmEngineChannel().register(with: registrar)
+      // The shared instance is retained process-wide; a transient object would
+      // deallocate and every Dart call would return NO_ENGINE.
+      AlarmEngineChannel.shared.register(with: registrar)
     }
   }
 
   /// Rebuild the ladder on every launch; iOS reclaims slots on force-quit or reboot.
+  /// `rescheduleAll` skips alarms whose ladders are live (a rung is delivered), so
+  /// tapping a ringing notification cannot cancel its own escalation.
   override func applicationDidBecomeActive(_ application: UIApplication) {
     super.applicationDidBecomeActive(application)
     Task { await LadderScheduler.shared.rescheduleAll() }

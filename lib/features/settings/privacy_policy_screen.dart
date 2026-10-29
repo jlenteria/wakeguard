@@ -6,7 +6,7 @@ import '../../shared/theme.dart';
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
 
-  static const url = 'https://jlenteria.netlify.app/wakeguard-privacy.html';
+  static const url = 'https://jlenteria.onrender.com/wakeguard-privacy.html';
   static const contact = 'jlenteria98@gmail.com';
   static const sections = <(String, String)>[
     (

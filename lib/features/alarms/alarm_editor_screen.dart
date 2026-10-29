@@ -807,11 +807,7 @@ class AlarmEditorScreen extends StatelessWidget {
     final days = minutes ~/ (24 * 60);
     final hours = (minutes % (24 * 60)) ~/ 60;
     final mins = minutes % 60;
-    return 'Ringing in ${[
-      if (days > 0) unit(days, 'day'),
-      if (hours > 0) unit(hours, 'hour'),
-      if (days == 0 && mins > 0) unit(mins, 'minute'),
-    ].join(' ')}';
+    return 'Ringing in ${[if (days > 0) unit(days, 'day'), if (hours > 0) unit(hours, 'hour'), if (days == 0 && mins > 0) unit(mins, 'minute')].join(' ')}';
   }
 
   /// The alarm time as a big tappable hero card, with a clear "tap to change" cue.
@@ -1006,56 +1002,53 @@ class AlarmEditorScreen extends StatelessWidget {
       context,
       padding: const EdgeInsets.all(14),
       child: Row(
-          children: [
-            _well(context, Icons.label_outline, iconSize: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                controller: viewModel.labelController,
-                onTapOutside: (_) =>
-                    FocusManager.instance.primaryFocus?.unfocus(),
-                textCapitalization: TextCapitalization.sentences,
-                style: theme.textTheme.titleMedium,
-                decoration: InputDecoration(
-                  labelText: 'Label',
-                  hintText: 'Wake up',
-                  hintStyle: theme.textTheme.titleMedium?.copyWith(
-                    color: scheme.outlineVariant,
-                  ),
-                  filled: false,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  labelStyle: labelStyle,
-                  floatingLabelStyle: labelStyle,
-                  // No outline at rest; a clear rounded ring once it is focused.
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(
-                      color: accentOf(context),
-                      width: 2,
-                    ),
-                  ),
+        children: [
+          _well(context, Icons.label_outline, iconSize: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: viewModel.labelController,
+              onTapOutside: (_) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
+              textCapitalization: TextCapitalization.sentences,
+              style: theme.textTheme.titleMedium,
+              decoration: InputDecoration(
+                labelText: 'Label',
+                hintText: 'Wake up',
+                hintStyle: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.outlineVariant,
+                ),
+                filled: false,
+                isDense: true,
+                contentPadding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: labelStyle,
+                floatingLabelStyle: labelStyle,
+                // No outline at rest; a clear rounded ring once it is focused.
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: accentOf(context), width: 2),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            ExcludeSemantics(
-              child: Icon(
-                Icons.edit_note,
-                size: 20,
-                color: scheme.outlineVariant,
-              ),
+          ),
+          const SizedBox(width: 12),
+          ExcludeSemantics(
+            child: Icon(
+              Icons.edit_note,
+              size: 20,
+              color: scheme.outlineVariant,
             ),
-          ],
+          ),
+        ],
       ),
     );
   }

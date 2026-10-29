@@ -15,11 +15,8 @@ class WakeGuardLogo extends StatelessWidget {
     height: size,
     filterQuality: FilterQuality.medium,
     excludeFromSemantics: true,
-    errorBuilder: (_, _, _) => Icon(
-      Icons.alarm,
-      size: size,
-      color: WakeTokens.of(context).cta,
-    ),
+    errorBuilder: (_, _, _) =>
+        Icon(Icons.alarm, size: size, color: WakeTokens.of(context).cta),
   );
 }
 
@@ -95,9 +92,7 @@ class BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: Text(
               'WakeGuard',
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                letterSpacing: -0.3,
-              ),
+              style: theme.textTheme.titleMedium?.copyWith(letterSpacing: -0.3),
             ),
           ),
         ],
@@ -166,9 +161,9 @@ class SurfaceCard extends StatelessWidget {
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: Ink(
-          decoration: gradient == null
-              ? null
-              : ShapeDecoration(shape: shape, gradient: gradient),
+        decoration: gradient == null
+            ? null
+            : ShapeDecoration(shape: shape, gradient: gradient),
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,
@@ -230,10 +225,11 @@ class InfoPill extends StatelessWidget {
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: (dense
-                      ? theme.textTheme.labelSmall
-                      : theme.textTheme.labelMedium)
-                  ?.copyWith(color: foreground),
+              style:
+                  (dense
+                          ? theme.textTheme.labelSmall
+                          : theme.textTheme.labelMedium)
+                      ?.copyWith(color: foreground),
             ),
           ),
         ],
@@ -256,7 +252,9 @@ class StatusDot extends StatelessWidget {
     decoration: BoxDecoration(
       shape: BoxShape.circle,
       color: color,
-      boxShadow: [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 6)],
+      boxShadow: [
+        BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 6),
+      ],
     ),
   );
 }
@@ -281,10 +279,7 @@ class SectionHeading extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
+          child: Text(title, style: Theme.of(context).textTheme.headlineSmall),
         ),
         ?trailing,
       ],

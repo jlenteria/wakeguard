@@ -25,17 +25,26 @@ class SplashView extends StatelessWidget {
             Positioned(
               top: -128 - 80,
               left: -80 - 80,
-              child: _Aura(color: tokens.dawn.withValues(alpha: 0.10), size: 480),
+              child: _Aura(
+                color: tokens.dawn.withValues(alpha: 0.10),
+                size: 480,
+              ),
             ),
             Positioned(
               top: constraints.maxHeight / 3 - 88,
               right: -96 - 88,
-              child: _Aura(color: tokens.cyan.withValues(alpha: 0.10), size: 528),
+              child: _Aura(
+                color: tokens.cyan.withValues(alpha: 0.10),
+                size: 528,
+              ),
             ),
             Positioned(
               bottom: -96 - 96,
               left: (constraints.maxWidth - 576) / 2,
-              child: _Aura(color: tokens.cta.withValues(alpha: 0.05), size: 576),
+              child: _Aura(
+                color: tokens.cta.withValues(alpha: 0.05),
+                size: 576,
+              ),
             ),
             SafeArea(
               child: Padding(
@@ -111,8 +120,9 @@ class SplashView extends StatelessWidget {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: scheme.surfaceContainerHigh
-                                    .withValues(alpha: 0.8),
+                                color: scheme.surfaceContainerHigh.withValues(
+                                  alpha: 0.8,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: tokens.dawn.withValues(alpha: 0.22),
@@ -170,8 +180,9 @@ class SplashView extends StatelessWidget {
                                 vertical: 6,
                               ),
                               decoration: ShapeDecoration(
-                                color: scheme.surfaceContainer
-                                    .withValues(alpha: 0.7),
+                                color: scheme.surfaceContainer.withValues(
+                                  alpha: 0.7,
+                                ),
                                 shape: const StadiumBorder(),
                               ),
                               child: Row(
@@ -206,8 +217,9 @@ class SplashView extends StatelessWidget {
                               vertical: 6,
                             ),
                             decoration: ShapeDecoration(
-                              color: scheme.surfaceContainerLow
-                                  .withValues(alpha: 0.9),
+                              color: scheme.surfaceContainerLow.withValues(
+                                alpha: 0.9,
+                              ),
                               shape: const StadiumBorder(),
                             ),
                             child: Row(
@@ -305,9 +317,7 @@ class _Aura extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, color.withValues(alpha: 0)],
-        ),
+        gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
       ),
     ),
   );

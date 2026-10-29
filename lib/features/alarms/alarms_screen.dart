@@ -205,18 +205,14 @@ class _AddAlarmButton extends StatelessWidget {
         ],
       ),
       child: FilledButton(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(56),
-        ),
+        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
         onPressed: open || onAdd == null ? null : onAdd,
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.add_circle, size: 24),
             SizedBox(width: 8),
-            Flexible(
-              child: Text('Add New Alarm', textAlign: TextAlign.center),
-            ),
+            Flexible(child: Text('Add New Alarm', textAlign: TextAlign.center)),
           ],
         ),
       ),
@@ -372,7 +368,9 @@ class _HeroCard extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(32),
           child: ColoredBox(
-            color: light ? scheme.surfaceContainerLow : scheme.surfaceContainerHigh,
+            color: light
+                ? scheme.surfaceContainerLow
+                : scheme.surfaceContainerHigh,
             child: Stack(
               children: [
                 Positioned(right: -48, top: -48, child: glow(tokens.cta)),
@@ -495,9 +493,11 @@ class _HeroCard extends StatelessWidget {
     DateTime now,
   ) {
     final days =
-        (DateTime(when.year, when.month, when.day)
-                    .difference(DateTime(now.year, now.month, now.day))
-                    .inHours /
+        (DateTime(
+                  when.year,
+                  when.month,
+                  when.day,
+                ).difference(DateTime(now.year, now.month, now.day)).inHours /
                 24)
             .round();
     if (days <= 0) return 'today';
@@ -751,16 +751,16 @@ class _AlarmTile extends StatelessWidget {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
-                                alarm.label.isEmpty ? 'Alarm' : alarm.label,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  fontWeight: on
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                  color: on
-                                      ? scheme.onSurface
-                                      : scheme.onSurfaceVariant,
-                                ),
+                              alarm.label.isEmpty ? 'Alarm' : alarm.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                fontWeight: on
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: on
+                                    ? scheme.onSurface
+                                    : scheme.onSurfaceVariant,
+                              ),
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(

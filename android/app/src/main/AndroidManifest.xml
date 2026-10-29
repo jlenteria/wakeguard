@@ -16,6 +16,11 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Enables the one-tap ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dialog from
+         Health; without it that intent throws SecurityException on every device and
+         Xiaomi users are blocked on an unverifiable setting with no working fix path. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

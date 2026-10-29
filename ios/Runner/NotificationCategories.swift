@@ -5,6 +5,8 @@ import UserNotifications
 /// dismissal UI. The confirm text-input action is a complete, camera-free escape.
 enum NotificationCategories {
     static let alarmCategory = "WAKEGUARD_ALARM"
+    /// Alarms with `snoozeMinutes == 0` must not be offered a snooze action.
+    static let alarmCategoryNoSnooze = "WAKEGUARD_ALARM_NO_SNOOZE"
 
     static func register() {
         let openChallenge = UNNotificationAction(
@@ -27,16 +29,23 @@ enum NotificationCategories {
             options: []
         )
 
-        let category = UNNotificationCategory(
-            identifier: alarmCategory,
+        let actions = [snooze, openChallenge, confirm]
+        let noSnoozeActions = [openChallenge, confirm]
+        UNUserNotificationCenter.current().setNotificationCategories([
             // Put Snooze first so compact action presentations can expose it.
-            actions: [snooze, openChallenge, confirm],
+            category(actions: actions, identifier: alarmCategory),
+            category(actions: noSnoozeActions, identifier: alarmCategoryNoSnooze),
+        ])
+    }
+
+    /// The user must be able to see and act on this from the lock screen.
+    private static func category(actions: [UNNotificationAction], identifier: String) -> UNNotificationCategory {
+        UNNotificationCategory(
+            identifier: identifier,
+            actions: actions,
             intentIdentifiers: [],
-            // The user must be able to see and act on this from the lock screen.
             options: [.customDismissAction]
         )
-
-        UNUserNotificationCenter.current().setNotificationCategories([category])
     }
 }
 

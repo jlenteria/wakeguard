@@ -68,6 +68,7 @@ class Alarm {
     this.difficulty = ChallengeDifficulty.moderate,
     this.soundPack = AlarmSoundPack.pulse,
     this.snoozeMinutes = defaultSnoozeMinutes,
+    this.holdSeconds,
     this.escapes = defaultEscapes,
     this.checkInMinutes = 0,
     this.objectTarget = WakeObject.sink,
@@ -128,6 +129,10 @@ class Alarm {
 
   /// Snooze window in minutes; 0 means this alarm cannot be snoozed.
   final int snoozeMinutes;
+
+  /// Seconds the hold-to-stop escape must be held. Null lets the platform use
+  /// its own default (iOS: 60), so an unset alarm keeps the strictest behaviour.
+  final int? holdSeconds;
 
   /// Only these selected challenges may successfully dismiss the alarm.
   final Set<EscapeKind> escapes;
@@ -190,6 +195,7 @@ class Alarm {
     ChallengeDifficulty? difficulty,
     AlarmSoundPack? soundPack,
     int? snoozeMinutes,
+    int? holdSeconds,
     Set<EscapeKind>? escapes,
     int? checkInMinutes,
     WakeObject? objectTarget,
@@ -211,6 +217,7 @@ class Alarm {
     difficulty: difficulty ?? this.difficulty,
     soundPack: soundPack ?? this.soundPack,
     snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
+    holdSeconds: holdSeconds ?? this.holdSeconds,
     escapes: escapes ?? this.escapes,
     checkInMinutes: checkInMinutes ?? this.checkInMinutes,
     objectTarget: objectTarget ?? this.objectTarget,
@@ -235,6 +242,7 @@ class Alarm {
     'difficulty': difficulty.name,
     'soundPack': soundPack.name,
     'snoozeMinutes': snoozeMinutes,
+    'holdSeconds': holdSeconds,
     'escapes': escapes.map((e) => e.name).toList(),
     'checkInMinutes': checkInMinutes,
     'objectTarget': objectTarget.name,
@@ -286,6 +294,7 @@ class Alarm {
       snoozeMinutes: ((json['snoozeMinutes'] as num?) ?? defaultSnoozeMinutes)
           .toInt()
           .clamp(0, 60),
+      holdSeconds: (json['holdSeconds'] as num?)?.toInt(),
       escapes: _parseEscapes(json['escapes']),
       checkInMinutes: const [0, 3, 5, 10].contains(json['checkInMinutes'])
           ? json['checkInMinutes'] as int
