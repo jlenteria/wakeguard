@@ -61,7 +61,9 @@ released audio and volume ownership.
 The next regular primary is armed at fire time. A one-time configuration is
 disabled then, but its session snapshot remains usable for snoozing and dismissal.
 Dismissal only ends that session; it never cancels/recreates tomorrow's alarm.
-Editing, disabling or deleting explicitly invalidates pending session work.
+Disabling or deleting invalidates pending session work. Editing re-arms an
+in-flight snooze and a pending check-in against the new configuration (unless
+check-ins are turned off in that edit); any other live phase is reset.
 
 Watchdogs exist **only during a ring**, at 45 seconds, 2, 5, 10 and 15 minutes.
 Each carries the session token; even a matching stale stop broadcast cannot stop

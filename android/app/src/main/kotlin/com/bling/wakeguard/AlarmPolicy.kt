@@ -21,6 +21,17 @@ object AlarmPolicy {
     fun needsCheckIn(minutes: Int, followUp: Boolean): Boolean = minutes > 0 && !followUp
 
     /**
+     * A snoozed ring or a pending check-in is already in flight for the current occurrence, so
+     * saving an alarm edit must re-arm it against the new configuration instead of silently
+     * cancelling it. Turning check-ins off in that edit still retires a pending check-in.
+     */
+    fun editKeepsSession(phase: String, checkInMinutes: Int): Boolean = when (phase) {
+        "snoozed" -> true
+        "checkin" -> checkInMinutes > 0
+        else -> false
+    }
+
+    /**
      * Wall clock at the start of the current boot. Unlike the hidden `boot_count` global — which is
      * absent on many OEM builds and then reads as the same 0 forever — this changes on every reboot,
      * so it is the reliable signal that a session's monotonic clock belongs to another boot.

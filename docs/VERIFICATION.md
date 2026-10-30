@@ -88,6 +88,8 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
     delays, one-time retirement, weekday repeats and process death. Practice and
     follow-ups offer no snooze. Tomorrow's repeat survives dismissal/snooze;
     skip/restore and disabled duplication still work without camera permission.
+    Editing an alarm while it is snoozed must not cancel the snooze: it still
+    rings at the original snooze time with the updated challenge/settings.
 13. **Stay Awake:** enable 3 minutes and dismiss using each selected challenge.
     History must show Check-in scheduled, then Reminder shown; verify the short
     bundled notification chime and vibration, including after upgrading an existing
@@ -101,20 +103,24 @@ scenarios locked, unlocked, with the Flutter process absent, and after reboot.
      response window starts, show the remaining seconds and offer I'm up. Confirm
      from the card and from the notification separately; both must cancel the
      deadline and record exactly one confirmation. Reopening during the window
-     must show only the remaining time, not start a new minute. Expired or edited
-     sessions cannot be confirmed; multiple check-ins must be handled individually.
+     must show only the remaining time, not start a new minute. Expired sessions
+     cannot be confirmed; editing the alarm keeps the pending check-in answerable
+     without extending its window. Multiple check-ins must be handled individually.
       With the phone locked, full-screen access enabled and the check-in channel
       allowed, verify the native Still up? page wakes the display and appears over
       the lock screen. With access denied or the phone unlocked, Android may show
       a notification instead. Tapping its body opens the same native page. Confirm
       from the page, card and notification action independently. Opening, leaving
       or rotating the page must not confirm or extend the window. Confirmation on
-      another surface, an alarm edit or expiry must close the stale page. At expiry
+      another surface or expiry must close the stale page. At expiry
       the native deadline still starts exactly one follow-up alarm.
 14. **Check-in recovery:** reboot or change time before/during/after the response
     window. A late restored prompt reports remaining seconds; an expired prompt
-    is not shown as newly answerable. Editing/deleting/disabling an alarm cancels
-    its old pending check-in; an ordinary app reload must not cancel it.
+    is not shown as newly answerable. Editing an alarm re-arms its pending check-in
+    (dismissing at 6:30, snoozing, dismissing the second ring, then saving an edit
+    must still prompt at the original time) unless that edit turns Stay Awake off;
+    deleting or disabling it cancels the check-in, and an ordinary app reload must
+    not cancel it.
 15. **Sessions:** nearby alarms queue without stopping each other. Stale tokens
     cannot dismiss/snooze a later occurrence. Playback, recovery, shutdown,
     timeout and queue draining must stay bounded; a forgotten alarm times out at

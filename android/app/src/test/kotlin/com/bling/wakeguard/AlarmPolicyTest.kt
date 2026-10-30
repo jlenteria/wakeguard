@@ -36,6 +36,19 @@ class AlarmPolicyTest {
         assertFalse(AlarmPolicy.needsCheckIn(0, false))
     }
 
+    @Test fun editingAnAlarmKeepsItsInFlightSnoozeAndConfiguredCheckIn() {
+        // A snoozed occurrence is still owed its ring, whatever the edit changes.
+        assertTrue(AlarmPolicy.editKeepsSession("snoozed", 5))
+        assertTrue(AlarmPolicy.editKeepsSession("snoozed", 0))
+        // The check-in was promised when the occurrence was dismissed; an edit must re-arm it.
+        assertTrue(AlarmPolicy.editKeepsSession("checkin", 5))
+        // Turning Stay Awake off in the same edit retires the pending check-in.
+        assertFalse(AlarmPolicy.editKeepsSession("checkin", 0))
+        assertFalse(AlarmPolicy.editKeepsSession("ringing", 5))
+        assertFalse(AlarmPolicy.editKeepsSession("queued", 5))
+        assertFalse(AlarmPolicy.editKeepsSession("done", 5))
+    }
+
     @Test fun clockChangesDoNotExtendARunningSession() {
         assertEquals(60_000L, AlarmPolicy.elapsed(100_000L, 20_000L, 1, 1, 5_000L, 80_000L))
         assertEquals(60_000L, AlarmPolicy.elapsed(100_000L, 20_000L, 1, 2, 160_000L, 5_000L))

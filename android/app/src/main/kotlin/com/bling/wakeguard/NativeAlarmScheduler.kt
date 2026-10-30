@@ -160,7 +160,13 @@ object NativeAlarmScheduler {
             // Undo brings the deleted occurrence back instead of starting over. The held session is
             // read before the disarm below and resumed afterwards, so arming it is not undone.
             val held = if (resetSession) AlarmSessions.takeHeld(context, alarm.id) else null
-            if (resetSession && held == null) AlarmSessions.invalidate(context, alarm.id)
+            // An edit re-arms a snoozed or check-in occurrence against the new settings: it is
+            // already in flight, and cancelling it would drop the ring or safety check it promised.
+            val inFlight = if (resetSession && held == null && alarm.enabled)
+                AlarmSessions.get(context, alarm.id)
+                    ?.takeIf { AlarmPolicy.editKeepsSession(it.phase, scheduled.checkInMinutes) }
+            else null
+            if (resetSession && held == null && inFlight == null) AlarmSessions.invalidate(context, alarm.id)
             disarmRungs(context, alarm.id)
             runCatching { manager.cancel(snoozePendingIntent(context, alarm.id)) }
             // A fresh schedule supersedes any corrective retry and its failure count.
@@ -176,6 +182,8 @@ object NativeAlarmScheduler {
             // Resuming an occurrence must not fail the schedule: the alarm itself is armed.
             held?.let { runCatching { resume(context, it, scheduled) }
                 .onFailure { error -> android.util.Log.e("WakeGuard", "Could not resume held session", error) } }
+            inFlight?.let { runCatching { resume(context, it, scheduled) }
+                .onFailure { error -> android.util.Log.e("WakeGuard", "Could not re-arm in-flight occurrence", error) } }
             // Watchdogs exist only for a live session, never for a future alarm.
         }
     }
